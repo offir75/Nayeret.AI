@@ -31,8 +31,8 @@ const translations = {
     he: 'שפת לוח הבקרה',
   },
   dashboardLangDesc: {
-    en: 'Cards show English summaries. Layout is left-to-right.',
-    he: 'הכרטיסים מציגים סיכומים בעברית. הפריסה מימין לשמאל.',
+    en: 'Table shows English summaries. Layout is left-to-right.',
+    he: 'הטבלה מציגה סיכומים בעברית. הפריסה מימין לשמאל.',
   },
   privacy: {
     en: 'Privacy',
@@ -122,6 +122,15 @@ const translations = {
     en: 'PDF, PNG, JPG, TIFF, BMP',
     he: 'PDF, PNG, JPG, TIFF, BMP',
   },
+  colFilename:  { en: 'Filename',    he: 'שם קובץ' },
+  colCategory:  { en: 'Category',   he: 'קטגוריה' },
+  colAmount:    { en: 'Amount',     he: 'סכום' },
+  colDueDate:   { en: 'Due Date',   he: 'תאריך פירעון' },
+  colStatus:    { en: 'Status',     he: 'סטטוס' },
+  tableDetails: { en: 'Details',    he: 'פרטים' },
+  tableSummary: { en: 'Summary',    he: 'סיכום' },
+  deleteDoc:    { en: '🗑 Delete',  he: '🗑 מחק' },
+  deletingDoc:  { en: 'Deleting…', he: 'מוחק…' },
 };
 import { useState, useEffect, useRef, createContext, useContext } from 'react';
 import { useRouter } from 'next/router';
@@ -169,6 +178,7 @@ interface VaultDoc {
   summary_he: string | null;
   summary_en: string | null;
   raw_analysis: Record<string, unknown> | null;
+  thumbnail_url: string | null;
   created_at: string;
 }
 
@@ -242,26 +252,6 @@ function TypeBadge({ type }: { type: string }) {
   );
 }
 
-function AlertBadge({ alert }: { alert: 'overdue' | 'due-soon' }) {
-  return alert === 'overdue' ? (
-    <span className="shrink-0 text-xs font-bold px-2 py-0.5 rounded-full border bg-red-100 text-red-700 border-red-300">
-      Overdue
-    </span>
-  ) : (
-    <span className="shrink-0 text-xs font-bold px-2 py-0.5 rounded-full border bg-amber-100 text-amber-700 border-amber-300">
-      Due Soon
-    </span>
-  );
-}
-
-function PotentialClaimBadge() {
-  const { lang } = useSettings();
-  return (
-    <span className="shrink-0 text-xs font-bold px-2 py-0.5 rounded-full border bg-violet-100 text-violet-700 border-violet-300">
-      ⚠ {translations.potentialClaim[lang]}
-    </span>
-  );
-}
 
 function Spinner({ size = 'sm' }: { size?: 'sm' | 'lg' }) {
   return size === 'lg' ? (
@@ -560,150 +550,6 @@ function SettingsPanel({
   );
 }
 
-// ─── Vault Card ───────────────────────────────────────────────────────────────
-
-function VaultCard({
-  doc,
-  onDelete,
-  token,
-  potentialClaim = false,
-}: {
-  doc: VaultDoc;
-  onDelete: (id: string) => void;
-  token: string;
-  potentialClaim?: boolean;
-}) {
-  const { lang, alertDays, currency } = useSettings();
-  const [detailsOpen, setDetailsOpen] = useState(false);
-  const [deleting, setDeleting] = useState(false);
-
-  const symbol = currency === 'ILS' ? '₪' : '$';
-  const summary = lang === 'he' ? doc.summary_he : doc.summary_en;
-  const metaEntries = Object.entries(doc.raw_analysis ?? {}).filter(
-    ([, v]) => v !== null && v !== undefined && v !== ''
-  );
-
-  const dueAlert =
-    doc.document_type === 'bill' ? getDueAlert(doc.raw_analysis?.due_date, alertDays) : null;
-  const liquid = isLiquid(doc);
-
-  const cardBorder = liquid
-    ? 'border-yellow-400 bg-yellow-50'
-    : dueAlert === 'overdue'
-    ? 'border-red-300'
-    : 'border-gray-200';
-
-  const handleDelete = async () => {
-    if (!confirm(`Delete "${doc.file_name}"? This cannot be undone.`)) return;
-    setDeleting(true);
-    const res = await fetch('/api/documents', {
-      method: 'DELETE',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${token}`,
-      },
-      body: JSON.stringify({ id: doc.id }),
-    });
-    if (res.ok) {
-      onDelete(doc.id);
-    } else {
-      alert('Failed to delete document.');
-      setDeleting(false);
-    }
-  };
-
-  return (
-    <div className={`border rounded-xl shadow-sm overflow-hidden flex flex-col transition-colors ${cardBorder}`}>
-      {liquid && (
-        <div className="bg-yellow-400 text-yellow-900 text-xs font-bold text-center py-1 tracking-wide">
-          💰 Liquidity Available
-        </div>
-      )}
-
-      <div className={`px-4 pt-4 pb-3 border-b ${liquid ? 'border-yellow-200 bg-yellow-50' : 'border-gray-100 bg-white'}`}>
-        <div className="flex items-start justify-between gap-2 mb-1.5">
-          <p className="text-sm font-medium text-gray-800 truncate flex-1" title={doc.file_name}>
-            📄 {doc.file_name}
-          </p>
-          <TypeBadge type={doc.document_type} />
-        </div>
-        <div className="flex items-center gap-2">
-          <p className="text-xs text-gray-400">
-            {new Date(doc.created_at).toLocaleDateString('en-GB', {
-              day: '2-digit', month: 'short', year: 'numeric',
-            })}
-          </p>
-          {dueAlert && <AlertBadge alert={dueAlert} />}
-          {potentialClaim && <PotentialClaimBadge />}
-        </div>
-      </div>
-
-      <div className={`px-4 py-3 flex-1 ${liquid ? 'bg-yellow-50' : 'bg-white'}`}>
-        {summary ? (
-          <p className="text-sm text-gray-700 leading-relaxed">{summary}</p>
-        ) : (
-          <p className="text-sm text-gray-400 italic">No summary available</p>
-        )}
-      </div>
-
-      {metaEntries.length > 0 && (
-        <div className={`border-t ${liquid ? 'border-yellow-200 bg-yellow-50' : 'border-gray-100 bg-white'}`}>
-          <button
-            onClick={() => setDetailsOpen((o) => !o)}
-            className="w-full flex items-center justify-between px-4 py-2 text-xs text-gray-500 hover:bg-black/5 transition-colors"
-          >
-            <span className="font-medium">Details</span>
-            <span>{detailsOpen ? '▲' : '▼'}</span>
-          </button>
-          {detailsOpen && (
-            <table className="w-full text-xs" dir="ltr">
-              <tbody>
-                {metaEntries.map(([key, value]) => {
-                  const rawStr = String(value);
-                  const isMoney = SENSITIVE_KEYS.has(key) && !isNaN(Number(value));
-                  let displayStr = rawStr;
-                  if (isMoney) {
-                    const converted = convertAmount(
-                      Number(value),
-                      String(doc.raw_analysis?.currency ?? 'ILS'),
-                      currency
-                    );
-                    displayStr = fmtMoney(converted, symbol);
-                  }
-                  return (
-                    <tr key={key} className="border-t border-gray-100">
-                      <td className="py-1 pl-4 pr-2 text-gray-500 font-medium capitalize w-2/5">
-                        {key.replace(/_/g, ' ')}
-                      </td>
-                      <td className="py-1 pr-4 text-gray-800">
-                        {SENSITIVE_KEYS.has(key) ? (
-                          <PrivateValue value={displayStr} />
-                        ) : (
-                          displayStr
-                        )}
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          )}
-        </div>
-      )}
-
-      <div className={`px-4 py-2 border-t flex justify-end ${liquid ? 'border-yellow-200 bg-yellow-50' : 'border-gray-100 bg-white'}`}>
-        <button
-          onClick={handleDelete}
-          disabled={deleting}
-          className="text-xs text-red-500 hover:text-red-700 disabled:opacity-50 transition-colors"
-        >
-          {deleting ? 'Deleting…' : '🗑 Delete'}
-        </button>
-      </div>
-    </div>
-  );
-}
-
 // ─── Empty State ──────────────────────────────────────────────────────────────
 
 function EmptyState({ isSearch }: { isSearch: boolean }) {
@@ -891,6 +737,288 @@ function IngestionHub({
   );
 }
 
+// ─── Thumbnail generation helpers (client-side only) ─────────────────────────
+
+async function renderPdfThumbnail(file: File): Promise<string> {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const pdfjsLib: any = await import('pdfjs-dist');
+  pdfjsLib.GlobalWorkerOptions.workerSrc =
+    `https://unpkg.com/pdfjs-dist@${pdfjsLib.version}/build/pdf.worker.min.mjs`;
+  const pdf = await pdfjsLib.getDocument({ data: await file.arrayBuffer() }).promise;
+  const page = await pdf.getPage(1);
+  const scale = 200 / page.getViewport({ scale: 1 }).width;
+  const viewport = page.getViewport({ scale });
+  const canvas = document.createElement('canvas');
+  canvas.width = viewport.width;
+  canvas.height = viewport.height;
+  await page.render({ canvasContext: canvas.getContext('2d')!, viewport }).promise;
+  return canvas.toDataURL('image/jpeg', 0.85).split(',')[1];
+}
+
+async function renderImageThumbnail(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    const url = URL.createObjectURL(file);
+    img.onload = () => {
+      const scale = Math.min(200 / img.width, 200 / img.height, 1);
+      const canvas = document.createElement('canvas');
+      canvas.width = Math.round(img.width * scale);
+      canvas.height = Math.round(img.height * scale);
+      canvas.getContext('2d')!.drawImage(img, 0, 0, canvas.width, canvas.height);
+      URL.revokeObjectURL(url);
+      resolve(canvas.toDataURL('image/jpeg', 0.85).split(',')[1]);
+    };
+    img.onerror = () => { URL.revokeObjectURL(url); reject(new Error('Image load failed')); };
+    img.src = url;
+  });
+}
+
+// ─── Vault Table ──────────────────────────────────────────────────────────────
+
+function ThumbnailCell({ doc }: { doc: VaultDoc }) {
+  const [imgError, setImgError] = useState(false);
+  if (doc.thumbnail_url && !imgError) {
+    return (
+      <img
+        src={doc.thumbnail_url}
+        alt=""
+        className="w-10 h-14 object-cover rounded border border-gray-200 flex-shrink-0"
+        onError={() => setImgError(true)}
+      />
+    );
+  }
+  const { color } = typeConfig(doc.document_type);
+  const icon =
+    doc.document_type === 'financial_report' ? '📊' :
+    doc.document_type === 'bill' ? '🧾' :
+    doc.document_type === 'receipt' ? '🧾' :
+    doc.document_type === 'claim' ? '📋' :
+    doc.document_type === 'insurances' ? '🛡' :
+    doc.document_type === 'identification' ? '🪪' : '📄';
+  return (
+    <div className={`w-10 h-10 rounded border flex items-center justify-center text-base select-none flex-shrink-0 ${color}`}>
+      {icon}
+    </div>
+  );
+}
+
+function VaultRow({
+  doc, token, onDelete, expanded, onToggle, hasInsurance,
+}: {
+  doc: VaultDoc;
+  token: string;
+  onDelete: (id: string) => void;
+  expanded: boolean;
+  onToggle: () => void;
+  hasInsurance: boolean;
+}) {
+  const { lang, alertDays, currency, privacyMode } = useSettings();
+  const [deleting, setDeleting] = useState(false);
+
+  const ra = doc.raw_analysis ?? {};
+  const dueAlert = doc.document_type === 'bill' ? getDueAlert(ra.due_date, alertDays) : null;
+  const liquid = isLiquid(doc);
+  const isPotentialClaim = doc.document_type === 'receipt' && hasInsurance;
+  const symbol = currency === 'ILS' ? '₪' : '$';
+  const summary = lang === 'he' ? doc.summary_he : doc.summary_en;
+
+  const amount = (() => {
+    const raw = Number(ra.total_amount ?? ra.total_balance);
+    if (isNaN(raw) || raw === 0) return null;
+    return fmtMoney(convertAmount(raw, String(ra.currency ?? 'ILS'), currency), symbol);
+  })();
+
+  const dueDateStr = (() => {
+    const d = ra.due_date ?? ra.purchase_date ?? ra.claim_date ?? ra.liquidity_date;
+    if (!d || typeof d !== 'string') return null;
+    const dt = new Date(d);
+    return isNaN(dt.getTime()) ? null : dt.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
+  })();
+
+  const metaEntries = Object.entries(ra).filter(([, v]) => v !== null && v !== undefined && v !== '');
+
+  const dots: Array<{ cls: string; tip: string }> = [];
+  if (dueAlert === 'overdue') dots.push({ cls: 'bg-red-500', tip: lang === 'he' ? 'באיחור' : 'Overdue' });
+  if (dueAlert === 'due-soon') dots.push({ cls: 'bg-amber-400', tip: lang === 'he' ? 'בקרוב' : 'Due Soon' });
+  if (liquid) dots.push({ cls: 'bg-yellow-400', tip: lang === 'he' ? 'נזילות' : 'Liquidity' });
+  if (isPotentialClaim) dots.push({ cls: 'bg-violet-500', tip: lang === 'he' ? 'תביעה' : 'Claim' });
+
+  const rowBg = liquid
+    ? 'bg-yellow-50 hover:bg-yellow-100'
+    : dueAlert === 'overdue'
+    ? 'bg-red-50 hover:bg-red-100'
+    : expanded
+    ? 'bg-indigo-50'
+    : 'bg-white hover:bg-gray-50';
+
+  const handleDelete = async (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (!confirm(`Delete "${doc.file_name}"? This cannot be undone.`)) return;
+    setDeleting(true);
+    const res = await fetch('/api/documents', {
+      method: 'DELETE',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+      body: JSON.stringify({ id: doc.id }),
+    });
+    if (res.ok) {
+      onDelete(doc.id);
+    } else {
+      alert('Failed to delete document.');
+      setDeleting(false);
+    }
+  };
+
+  return (
+    <>
+      <tr className={`cursor-pointer transition-colors ${rowBg}`} onClick={onToggle}>
+        <td className="py-2 px-3 w-12">
+          <ThumbnailCell doc={doc} />
+        </td>
+        <td className="py-2 px-3">
+          <p className="text-sm font-medium text-gray-800 truncate max-w-[180px]" title={doc.file_name}>
+            {doc.file_name}
+          </p>
+          <p className="text-xs text-gray-400 mt-0.5">
+            {new Date(doc.created_at).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })}
+          </p>
+        </td>
+        <td className="py-2 px-3">
+          <TypeBadge type={doc.document_type} />
+        </td>
+        <td className="py-2 px-3 text-sm text-right hidden sm:table-cell tabular-nums">
+          {amount ? (
+            privacyMode
+              ? <PrivateValue value={amount} />
+              : <span className="text-gray-700">{amount}</span>
+          ) : <span className="text-gray-300">—</span>}
+        </td>
+        <td className="py-2 px-3 text-xs text-right hidden sm:table-cell text-gray-500">
+          {dueDateStr ?? <span className="text-gray-300">—</span>}
+        </td>
+        <td className="py-2 px-3">
+          <div className="flex gap-1 justify-center">
+            {dots.map((dot, i) => (
+              <span key={i} className={`inline-block w-2 h-2 rounded-full ${dot.cls}`} title={dot.tip} />
+            ))}
+          </div>
+        </td>
+      </tr>
+
+      {expanded && (
+        <tr className="bg-gray-50 border-t border-gray-200">
+          <td colSpan={6} className="px-5 py-4">
+            <div className="flex flex-col gap-3" dir={lang === 'he' ? 'rtl' : 'ltr'}>
+              {summary && (
+                <div>
+                  <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-1">
+                    {translations.tableSummary[lang]}
+                  </p>
+                  <p className="text-sm text-gray-700 leading-relaxed">{summary}</p>
+                </div>
+              )}
+              {metaEntries.length > 0 && (
+                <div>
+                  <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-1">
+                    {translations.tableDetails[lang]}
+                  </p>
+                  <table className="w-full text-xs" dir="ltr">
+                    <tbody>
+                      {metaEntries.map(([key, value]) => {
+                        const rawStr = String(value);
+                        const isMoney = SENSITIVE_KEYS.has(key) && !isNaN(Number(value));
+                        let displayStr = rawStr;
+                        if (isMoney) {
+                          displayStr = fmtMoney(
+                            convertAmount(Number(value), String(ra.currency ?? 'ILS'), currency),
+                            symbol,
+                          );
+                        }
+                        return (
+                          <tr key={key} className="border-t border-gray-100">
+                            <td className="py-1 pr-3 text-gray-500 font-medium capitalize w-2/5">
+                              {key.replace(/_/g, ' ')}
+                            </td>
+                            <td className="py-1 text-gray-800">
+                              {SENSITIVE_KEYS.has(key) ? <PrivateValue value={displayStr} /> : displayStr}
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+              <div className="flex justify-end pt-1">
+                <button
+                  onClick={handleDelete}
+                  disabled={deleting}
+                  className="text-xs text-red-500 hover:text-red-700 border border-red-200 rounded px-3 py-1 transition-colors disabled:opacity-50"
+                >
+                  {deleting ? translations.deletingDoc[lang] : translations.deleteDoc[lang]}
+                </button>
+              </div>
+            </div>
+          </td>
+        </tr>
+      )}
+    </>
+  );
+}
+
+function VaultTable({
+  docs, token, onDelete,
+}: {
+  docs: VaultDoc[];
+  token: string;
+  onDelete: (id: string) => void;
+}) {
+  const { lang } = useSettings();
+  const [expandedId, setExpandedId] = useState<string | null>(null);
+  const hasInsurance = docs.some((d) => d.document_type === 'insurances');
+
+  const toggle = (id: string) => setExpandedId(prev => prev === id ? null : id);
+
+  return (
+    <div className="overflow-x-auto rounded-xl border border-gray-200 shadow-sm">
+      <table className="w-full text-sm" dir={lang === 'he' ? 'rtl' : 'ltr'}>
+        <thead className="bg-gray-50 border-b border-gray-200">
+          <tr>
+            <th className="w-12 py-3 px-3" />
+            <th className="py-3 px-3 text-start font-semibold text-gray-600 text-xs uppercase tracking-wide">
+              {translations.colFilename[lang]}
+            </th>
+            <th className="py-3 px-3 font-semibold text-gray-600 text-xs uppercase tracking-wide">
+              {translations.colCategory[lang]}
+            </th>
+            <th className="py-3 px-3 font-semibold text-gray-600 text-xs uppercase tracking-wide text-end hidden sm:table-cell">
+              {translations.colAmount[lang]}
+            </th>
+            <th className="py-3 px-3 font-semibold text-gray-600 text-xs uppercase tracking-wide text-end hidden sm:table-cell">
+              {translations.colDueDate[lang]}
+            </th>
+            <th className="py-3 px-3 font-semibold text-gray-600 text-xs uppercase tracking-wide text-center">
+              {translations.colStatus[lang]}
+            </th>
+          </tr>
+        </thead>
+        <tbody className="divide-y divide-gray-100">
+          {docs.map((doc) => (
+            <VaultRow
+              key={doc.id}
+              doc={doc}
+              token={token}
+              onDelete={onDelete}
+              expanded={expandedId === doc.id}
+              onToggle={() => toggle(doc.id)}
+              hasInsurance={hasInsurance}
+            />
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
 // ─── Main Dashboard ───────────────────────────────────────────────────────────
 
 export default function Dashboard() {
@@ -1026,13 +1154,42 @@ export default function Dashboard() {
         const d = await analyzeRes.json();
         if (!analyzeRes.ok || !d.success) throw new Error(d.error ?? 'Analysis failed');
 
-        setDocs(prev => [
-          { id: d.supabaseId, file_name: job.resolvedName, document_type: d.document_type ?? 'other',
-            summary_he: d.summary_he ?? null, summary_en: d.summary_en ?? null,
-            raw_analysis: d.raw_metadata ?? null, created_at: new Date().toISOString() },
-          ...prev.filter(p => p.id !== d.supabaseId),
-        ]);
+        const supabaseId: string = d.supabaseId;
+        const newDoc: VaultDoc = {
+          id: supabaseId,
+          file_name: job.resolvedName,
+          document_type: d.document_type ?? 'other',
+          summary_he: d.summary_he ?? null,
+          summary_en: d.summary_en ?? null,
+          raw_analysis: d.raw_metadata ?? null,
+          thumbnail_url: null,
+          created_at: new Date().toISOString(),
+        };
+        setDocs(prev => [newDoc, ...prev.filter(p => p.id !== supabaseId)]);
         setUploadQueue(prev => prev.map(j => j.id === job.id ? { ...j, status: 'done' } : j));
+
+        // Generate and upload thumbnail (non-blocking)
+        if (supabaseId) {
+          const ext = job.resolvedName.split('.').pop()?.toLowerCase() ?? '';
+          const thumbPromise = ext === 'pdf'
+            ? renderPdfThumbnail(job.originalFile)
+            : renderImageThumbnail(job.originalFile);
+          thumbPromise
+            .then(base64 => fetch('/api/thumbnail', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+              body: JSON.stringify({ documentId: supabaseId, thumbnailBase64: base64 }),
+            }))
+            .then(r => r.ok ? r.json() : null)
+            .then(data => {
+              if (data?.thumbnailUrl) {
+                setDocs(prev => prev.map(doc =>
+                  doc.id === supabaseId ? { ...doc, thumbnail_url: data.thumbnailUrl } : doc
+                ));
+              }
+            })
+            .catch(() => {}); // silent — icon fallback shown
+        }
       } catch (err) {
         setUploadQueue(prev => prev.map(j => j.id === job.id
           ? { ...j, status: 'error', errorMsg: err instanceof Error ? err.message : 'Unknown error' }
@@ -1178,20 +1335,11 @@ export default function Dashboard() {
               <p className="text-sm text-gray-400">{lang === 'he' ? 'טוען כספת…' : 'Loading vault…'}</p>
             </div>
           ) : filtered.length > 0 ? (
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-              {(() => {
-                const hasInsurance = docs.some((d) => d.document_type === 'insurances');
-                return filtered.map((doc) => (
-                  <VaultCard
-                    key={doc.id}
-                    doc={doc}
-                    onDelete={handleDelete}
-                    token={session?.access_token ?? ''}
-                    potentialClaim={doc.document_type === 'receipt' && hasInsurance}
-                  />
-                ));
-              })()}
-            </div>
+            <VaultTable
+              docs={filtered}
+              token={session?.access_token ?? ''}
+              onDelete={handleDelete}
+            />
           ) : (
             <EmptyState isSearch={search.length > 0} />
           )}

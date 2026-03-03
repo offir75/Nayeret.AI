@@ -25,7 +25,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   if (req.method === 'GET') {
     const { data, error } = await supabaseAdmin
       .from('documents')
-      .select('id, file_name, document_type, summary_he, summary_en, raw_analysis, created_at')
+      .select('id, file_name, document_type, summary_he, summary_en, raw_analysis, thumbnail_url, created_at')
       .eq('owner_id', userId)
       .order('created_at', { ascending: false });
 
@@ -69,6 +69,12 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     if (existsSync(filePath)) {
       await unlink(filePath).catch(() => null);
     }
+
+    // Remove thumbnail from Supabase Storage (best-effort)
+    await supabaseAdmin.storage
+      .from('thumbnails')
+      .remove([`${doc.owner_id}/${id}.jpg`])
+      .catch(() => null);
 
     return res.status(200).json({ success: true });
   }
