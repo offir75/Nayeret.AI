@@ -21,13 +21,14 @@ async function callGemini(prompt: string, jsonMode = false): Promise<string> {
   return text;
 }
 
-type DocumentType = 'bill' | 'financial_report' | 'receipt' | 'other';
+type DocumentType = 'bill' | 'financial_report' | 'receipt' | 'claim' | 'other';
 
 function toDocumentType(group: string): DocumentType {
   const g = group.trim().toLowerCase();
   if (g === 'bills') return 'bill';
   if (g === 'financial reports') return 'financial_report';
   if (g === 'receipts') return 'receipt';
+  if (g === 'tax/insurance claims' || g === 'claims') return 'claim';
   return 'other'; // insurances, identification, other
 }
 
@@ -105,7 +106,8 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     // 3. Classify into one of the supported categories
     const classificationPrompt =
       `Classify this document into exactly one of these categories:\n` +
-      `Bills, Financial Reports, Insurances, Identification, Receipts, Other\n\n` +
+      `Bills, Financial Reports, Insurances, Identification, Receipts, Tax/Insurance Claims, Other\n\n` +
+      `Use "Tax/Insurance Claims" for documents that are insurance claims, tax refund claims, medical reimbursements, or similar claim forms.\n` +
       `Return only the category name, nothing else.\n\n` +
       `Summary: ${summaries.en}\nDocument: ${text.slice(0, 4000)}`;
     const document_group = await callGemini(classificationPrompt);
@@ -130,6 +132,12 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         extractionPrompt =
           `Extract the following fields as a JSON object:\n` +
           `merchant, total_amount, currency, purchase_date (YYYY-MM-DD)\n\n` +
+          `Document:\n${text.slice(0, 6000)}`;
+        break;
+      case 'claim':
+        extractionPrompt =
+          `Extract the following fields as a JSON object:\n` +
+          `claim_type, policy_number, insurer, total_amount, currency, claim_date (YYYY-MM-DD), status\n\n` +
           `Document:\n${text.slice(0, 6000)}`;
         break;
       default:

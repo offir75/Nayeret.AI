@@ -1,4 +1,4 @@
-import { FiSettings, FiUser } from 'react-icons/fi';
+import { FiSettings } from 'react-icons/fi';
 // Extend translations for settings panel
 // ─── Translations ───────────────────────────────────────────────────────────
 const translations = {
@@ -78,6 +78,10 @@ const translations = {
     en: `Amounts in the summary bar are converted at a static rate: 1 USD = 3.70 ILS.`,
     he: 'הסכומים בסרגל הסיכום מומרות לפי שער קבוע: 1 דולר = 3.70 ש"ח.',
   },
+  potentialClaim: {
+    en: 'Potential Claim',
+    he: 'תביעה פוטנציאלית',
+  },
 };
 import { useState, useEffect, useRef, createContext, useContext } from 'react';
 import { useRouter } from 'next/router';
@@ -148,6 +152,7 @@ const TYPE_CONFIG: Record<string, { label: string; color: string }> = {
   bill:             { label: 'Bill',             color: 'bg-blue-100 text-blue-800 border-blue-200' },
   financial_report: { label: 'Financial Report', color: 'bg-green-100 text-green-800 border-green-200' },
   receipt:          { label: 'Receipt',          color: 'bg-yellow-100 text-yellow-800 border-yellow-200' },
+  claim:            { label: 'Claim',            color: 'bg-rose-100 text-rose-800 border-rose-200' },
   insurances:       { label: 'Insurance',        color: 'bg-purple-100 text-purple-800 border-purple-200' },
   identification:   { label: 'ID / Passport',    color: 'bg-orange-100 text-orange-800 border-orange-200' },
   other:            { label: 'Other',            color: 'bg-gray-100 text-gray-700 border-gray-200' },
@@ -204,6 +209,15 @@ function AlertBadge({ alert }: { alert: 'overdue' | 'due-soon' }) {
   ) : (
     <span className="shrink-0 text-xs font-bold px-2 py-0.5 rounded-full border bg-amber-100 text-amber-700 border-amber-300">
       Due Soon
+    </span>
+  );
+}
+
+function PotentialClaimBadge() {
+  const { lang } = useSettings();
+  return (
+    <span className="shrink-0 text-xs font-bold px-2 py-0.5 rounded-full border bg-violet-100 text-violet-700 border-violet-300">
+      ⚠ {translations.potentialClaim[lang]}
     </span>
   );
 }
@@ -331,6 +345,8 @@ function SettingsPanel({
     currency, setCurrency,
   } = useSettings();
 
+  const [avatarError, setAvatarError] = useState(false);
+
   if (!isOpen) return null;
 
   const displayName = user?.user_metadata?.full_name ?? user?.email ?? 'User';
@@ -368,16 +384,15 @@ function SettingsPanel({
               {translations.profile[lang]}
             </h3>
             <div className="flex items-center gap-3 mb-4">
-              {avatarUrl ? (
+              {avatarUrl && !avatarError ? (
                 <img
                   src={avatarUrl}
                   alt="avatar"
                   className="w-10 h-10 rounded-full object-cover flex-shrink-0"
-                  onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
+                  onError={() => setAvatarError(true)}
                 />
               ) : (
-                <div className="w-10 h-10 rounded-full bg-indigo-100 flex items-center justify-center text-indigo-600 font-semibold text-sm flex-shrink-0">
-                  <FiUser className="w-5 h-5" />
+                <div className="w-10 h-10 rounded-full bg-indigo-100 flex items-center justify-center text-indigo-600 font-bold text-sm flex-shrink-0 select-none">
                   {initials}
                 </div>
               )}
@@ -510,10 +525,12 @@ function VaultCard({
   doc,
   onDelete,
   token,
+  potentialClaim = false,
 }: {
   doc: VaultDoc;
   onDelete: (id: string) => void;
   token: string;
+  potentialClaim?: boolean;
 }) {
   const { lang, alertDays, currency } = useSettings();
   const [detailsOpen, setDetailsOpen] = useState(false);
@@ -576,6 +593,7 @@ function VaultCard({
             })}
           </p>
           {dueAlert && <AlertBadge alert={dueAlert} />}
+          {potentialClaim && <PotentialClaimBadge />}
         </div>
       </div>
 
@@ -680,6 +698,7 @@ export default function Dashboard() {
 
   // ── UI state ───────────────────────────────────────────────────────────────
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [headerAvatarError, setHeaderAvatarError] = useState(false);
   const [docs, setDocs] = useState<VaultDoc[]>([]);
   const [loadingLibrary, setLoadingLibrary] = useState(true);
   const [uploading, setUploading] = useState(false);
@@ -897,23 +916,29 @@ export default function Dashboard() {
               )}
             </button>
 
-            {/* User avatar (clickable → opens settings) */}
-            <button
-              onClick={() => setSettingsOpen(true)}
-              className="flex items-center gap-2 p-1 rounded-lg hover:bg-gray-100 transition-colors"
-              title="Settings"
-            >
-              {user.user_metadata?.avatar_url ? (
+            {/* User avatar — display only */}
+            <div className="shrink-0">
+              {user.user_metadata?.avatar_url && !headerAvatarError ? (
                 <img
                   src={user.user_metadata.avatar_url as string}
                   alt="avatar"
                   className="w-8 h-8 rounded-full object-cover"
+                  onError={() => setHeaderAvatarError(true)}
                 />
               ) : (
-                <div className="w-8 h-8 rounded-full bg-indigo-100 flex items-center justify-center text-indigo-600 font-semibold text-sm">
+                <div className="w-8 h-8 rounded-full bg-indigo-100 flex items-center justify-center text-indigo-600 font-semibold text-sm select-none">
                   {(user.user_metadata?.full_name ?? user.email ?? '?')[0].toUpperCase()}
                 </div>
               )}
+            </div>
+
+            {/* Gear icon — opens settings */}
+            <button
+              onClick={() => setSettingsOpen(true)}
+              className="p-2 rounded-lg hover:bg-gray-100 transition-colors text-gray-500 hover:text-gray-700"
+              title={lang === 'he' ? 'הגדרות' : 'Settings'}
+            >
+              <FiSettings className="w-5 h-5" />
             </button>
           </div>
 
@@ -956,14 +981,18 @@ export default function Dashboard() {
             </div>
           ) : filtered.length > 0 ? (
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-              {filtered.map((doc) => (
-                <VaultCard
-                  key={doc.id}
-                  doc={doc}
-                  onDelete={handleDelete}
-                  token={session?.access_token ?? ''}
-                />
-              ))}
+              {(() => {
+                const hasInsurance = docs.some((d) => d.document_type === 'insurances');
+                return filtered.map((doc) => (
+                  <VaultCard
+                    key={doc.id}
+                    doc={doc}
+                    onDelete={handleDelete}
+                    token={session?.access_token ?? ''}
+                    potentialClaim={doc.document_type === 'receipt' && hasInsurance}
+                  />
+                ));
+              })()}
             </div>
           ) : (
             <EmptyState isSearch={search.length > 0} />
