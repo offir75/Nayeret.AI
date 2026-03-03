@@ -85,6 +85,7 @@ const translations = {
 };
 import { useState, useEffect, useRef, createContext, useContext } from 'react';
 import { useRouter } from 'next/router';
+import { useDropzone } from 'react-dropzone';
 import { supabase } from '@/supabase/browser';
 import type { User, Session } from '@supabase/supabase-js';
 
@@ -680,6 +681,76 @@ function EmptyState({ isSearch }: { isSearch: boolean }) {
   );
 }
 
+// ─── Upload queue ─────────────────────────────────────────────────────────────
+
+interface UploadJob {
+  id: string;
+  originalFile: File;
+  resolvedName: string;
+  status: 'queued' | 'analyzing' | 'done' | 'error';
+  errorMsg?: string;
+}
+
+function resolveFilename(name: string, existingNames: Set<string>): string {
+  if (!existingNames.has(name)) return name;
+  const dot = name.lastIndexOf('.');
+  const base = dot > 0 ? name.slice(0, dot) : name;
+  const ext  = dot > 0 ? name.slice(dot) : '';
+  return `${base}_${Date.now()}${ext}`;
+}
+
+function readFileAsBase64(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      const result = reader.result?.toString().split(',')[1];
+      if (result) resolve(result);
+      else reject(new Error('Could not read file'));
+    };
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
+}
+
+function BulkProgressBar({ queue }: { queue: UploadJob[] }) {
+  const done   = queue.filter(j => j.status === 'done' || j.status === 'error').length;
+  const errors = queue.filter(j => j.status === 'error').length;
+  const total  = queue.length;
+  if (total === 0) return null;
+  const pct     = Math.round((done / total) * 100);
+  const allDone = done === total;
+
+  return (
+    <div className="fixed bottom-0 left-0 right-0 z-50 bg-white border-t border-gray-200 shadow-lg px-6 py-3" dir="ltr">
+      <div className="max-w-5xl mx-auto">
+        <div className="flex items-center justify-between mb-1.5">
+          <span className="text-sm font-medium text-gray-700">
+            {allDone
+              ? errors > 0
+                ? `Completed — ${errors} error${errors > 1 ? 's' : ''}`
+                : `✓ ${total} document${total > 1 ? 's' : ''} analyzed`
+              : `Analyzing ${done + 1} of ${total} document${total > 1 ? 's' : ''}…`}
+          </span>
+          <span className="text-xs text-gray-400 tabular-nums">{pct}%</span>
+        </div>
+        <div className="h-1.5 bg-gray-100 rounded-full overflow-hidden">
+          <div
+            className={`h-full rounded-full transition-all duration-500 ${
+              allDone && errors > 0 ? 'bg-red-400' : 'bg-indigo-500'
+            }`}
+            style={{ width: `${pct}%` }}
+          />
+        </div>
+        {allDone && errors > 0 && (
+          <p className="text-xs text-red-500 mt-1">
+            Failed: {queue.filter(j => j.status === 'error').map(j => j.resolvedName).join(', ')}
+          </p>
+        )}
+      </div>
+    </div>
+  );
+}
+
 // ─── Main Dashboard ───────────────────────────────────────────────────────────
 
 export default function Dashboard() {
@@ -701,10 +772,10 @@ export default function Dashboard() {
   const [headerAvatarError, setHeaderAvatarError] = useState(false);
   const [docs, setDocs] = useState<VaultDoc[]>([]);
   const [loadingLibrary, setLoadingLibrary] = useState(true);
-  const [uploading, setUploading] = useState(false);
-  const [status, setStatus] = useState<{ text: string; ok: boolean } | null>(null);
+  const [uploadQueue, setUploadQueue] = useState<UploadJob[]>([]);
   const [search, setSearch] = useState('');
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const folderInputRef = useRef<HTMLInputElement>(null);
 
   // ── Persist helpers ────────────────────────────────────────────────────────
 
@@ -781,71 +852,84 @@ export default function Dashboard() {
   // ── Upload ─────────────────────────────────────────────────────────────────
 
   const handleUploadClick = () => fileInputRef.current?.click();
+  const handleFolderClick  = () => folderInputRef.current?.click();
 
-  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    if (!file.name.toLowerCase().endsWith('.pdf')) {
-      setStatus({ text: 'Only PDF files are supported.', ok: false });
-      return;
-    }
+  const handleFiles = async (files: File[]) => {
+    if (!session) return;
+    const pdfs = files.filter(f => f.name.toLowerCase().endsWith('.pdf'));
+    if (pdfs.length === 0) return;
 
-    setUploading(true);
-    setStatus(null);
+    // Deduplicate against existing docs and within the batch itself
+    const existingNames = new Set(docs.map(d => d.file_name));
+    const jobs: UploadJob[] = pdfs.map((file) => {
+      const resolved = resolveFilename(file.name, existingNames);
+      existingNames.add(resolved);
+      return { id: Math.random().toString(36).slice(2), originalFile: file, resolvedName: resolved, status: 'queued' as const };
+    });
 
-    const reader = new FileReader();
-    reader.onload = async () => {
+    setUploadQueue(prev => [...prev, ...jobs]);
+
+    for (const job of jobs) {
+      setUploadQueue(prev => prev.map(j => j.id === job.id ? { ...j, status: 'analyzing' } : j));
       try {
-        const base64 = reader.result?.toString().split(',')[1];
-        if (!base64) throw new Error('Could not read file');
-
-        // Get the latest token for this request
         const { data: { session: fresh } } = await supabase.auth.getSession();
         const token = fresh?.access_token ?? '';
+        const base64 = await readFileAsBase64(job.originalFile);
 
         const uploadRes = await fetch('/api/upload', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ file: base64, filename: file.name }),
+          body: JSON.stringify({ file: base64, filename: job.resolvedName }),
         });
-        if (!uploadRes.ok) {
-          const d = await uploadRes.json();
-          throw new Error(d.error ?? 'Upload failed');
-        }
+        if (!uploadRes.ok) throw new Error((await uploadRes.json()).error ?? 'Upload failed');
 
         const analyzeRes = await fetch('/api/analyze', {
           method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            Authorization: `Bearer ${token}`,
-          },
-          body: JSON.stringify({ filename: file.name }),
+          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+          body: JSON.stringify({ filename: job.resolvedName }),
         });
-        const analyzeData = await analyzeRes.json();
-        if (!analyzeRes.ok || !analyzeData.success) {
-          throw new Error(analyzeData.error ?? 'Analysis failed');
-        }
+        const d = await analyzeRes.json();
+        if (!analyzeRes.ok || !d.success) throw new Error(d.error ?? 'Analysis failed');
 
-        const newDoc: VaultDoc = {
-          id: analyzeData.supabaseId,
-          file_name: file.name,
-          document_type: analyzeData.document_type ?? 'other',
-          summary_he: analyzeData.summary_he ?? null,
-          summary_en: analyzeData.summary_en ?? null,
-          raw_analysis: analyzeData.raw_metadata ?? null,
-          created_at: new Date().toISOString(),
-        };
-        setDocs((prev) => [newDoc, ...prev.filter((d) => d.id !== newDoc.id)]);
-        setStatus({ text: `✓ "${file.name}" analyzed and saved.`, ok: true });
+        setDocs(prev => [
+          { id: d.supabaseId, file_name: job.resolvedName, document_type: d.document_type ?? 'other',
+            summary_he: d.summary_he ?? null, summary_en: d.summary_en ?? null,
+            raw_analysis: d.raw_metadata ?? null, created_at: new Date().toISOString() },
+          ...prev.filter(p => p.id !== d.supabaseId),
+        ]);
+        setUploadQueue(prev => prev.map(j => j.id === job.id ? { ...j, status: 'done' } : j));
       } catch (err) {
-        setStatus({ text: `✗ ${err instanceof Error ? err.message : 'Unknown error'}`, ok: false });
-      } finally {
-        setUploading(false);
-        if (fileInputRef.current) fileInputRef.current.value = '';
+        setUploadQueue(prev => prev.map(j => j.id === job.id
+          ? { ...j, status: 'error', errorMsg: err instanceof Error ? err.message : 'Unknown error' }
+          : j));
       }
-    };
-    reader.readAsDataURL(file);
+    }
+
+    // Auto-dismiss the progress bar after 4 s
+    const jobIds = new Set(jobs.map(j => j.id));
+    setTimeout(() => setUploadQueue(prev => prev.filter(j => !jobIds.has(j.id))), 4000);
   };
+
+  const handleFileInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(e.target.files ?? []);
+    if (files.length) handleFiles(files);
+    if (fileInputRef.current) fileInputRef.current.value = '';
+  };
+
+  const handleFolderChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(e.target.files ?? []).filter(f => f.name.toLowerCase().endsWith('.pdf'));
+    if (files.length) handleFiles(files);
+    if (folderInputRef.current) folderInputRef.current.value = '';
+  };
+
+  const { getRootProps, isDragActive } = useDropzone({
+    onDrop: handleFiles,
+    accept: { 'application/pdf': ['.pdf'] },
+    noClick: true,
+    noKeyboard: true,
+  });
+
+  const isUploading = uploadQueue.some(j => j.status === 'queued' || j.status === 'analyzing');
 
   const handleDelete = (id: string) => setDocs((prev) => prev.filter((d) => d.id !== id));
 
@@ -882,7 +966,20 @@ export default function Dashboard() {
 
   return (
     <SettingsContext.Provider value={ctx}>
-      <div className="min-h-screen bg-gray-50" dir={lang === 'he' ? 'rtl' : 'ltr'}>
+      <div {...getRootProps()} className="min-h-screen bg-gray-50" dir={lang === 'he' ? 'rtl' : 'ltr'}>
+
+        {/* Drag-over overlay */}
+        {isDragActive && (
+          <div className="fixed inset-0 z-50 bg-indigo-600/20 backdrop-blur-sm flex items-center justify-center pointer-events-none">
+            <div className="bg-white rounded-2xl shadow-2xl border-2 border-dashed border-indigo-400 px-12 py-10 text-center">
+              <div className="text-5xl mb-3">📂</div>
+              <p className="text-xl font-bold text-indigo-700">
+                {lang === 'he' ? 'שחרר מסמכים לתוך LifeVault' : 'Drop Documents into LifeVault'}
+              </p>
+              <p className="text-sm text-indigo-500 mt-1">PDF {lang === 'he' ? 'בלבד' : 'files only'}</p>
+            </div>
+          </div>
+        )}
 
         <SettingsPanel
           isOpen={settingsOpen}
@@ -903,10 +1000,10 @@ export default function Dashboard() {
           <div className="flex items-center gap-2">
             <button
               onClick={handleUploadClick}
-              disabled={uploading}
+              disabled={isUploading}
               className="flex items-center gap-2 bg-indigo-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-indigo-700 disabled:bg-indigo-400 disabled:cursor-not-allowed transition-colors"
             >
-              {uploading ? (
+              {isUploading ? (
                 <>
                   <Spinner size="sm" />
                   <span>{lang === 'he' ? 'מנתח…' : 'Analyzing…'}</span>
@@ -914,6 +1011,16 @@ export default function Dashboard() {
               ) : (
                 lang === 'he' ? '+ העלה PDF' : '+ Upload PDF'
               )}
+            </button>
+
+            {/* Select Folder */}
+            <button
+              onClick={handleFolderClick}
+              disabled={isUploading}
+              className="flex items-center gap-1.5 border border-gray-300 text-gray-700 px-3 py-2 rounded-lg text-sm font-medium hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+              title={lang === 'he' ? 'בחר תיקייה' : 'Select Folder'}
+            >
+              📁 {lang === 'he' ? 'תיקייה' : 'Folder'}
             </button>
 
             {/* User avatar — display only */}
@@ -942,23 +1049,11 @@ export default function Dashboard() {
             </button>
           </div>
 
-          <input ref={fileInputRef} type="file" accept=".pdf" onChange={handleFileChange} className="hidden" />
+          <input ref={fileInputRef} type="file" accept=".pdf" multiple onChange={handleFileInputChange} className="hidden" />
+          <input ref={folderInputRef} type="file" accept=".pdf" multiple onChange={handleFolderChange} className="hidden" {...({ webkitdirectory: '' } as {})} />
         </header>
 
         <main className="max-w-5xl mx-auto px-6 py-6">
-          {/* Status banner */}
-          {status && (
-            <div
-              className={`mb-5 px-4 py-2.5 rounded-lg text-sm border ${
-                status.ok
-                  ? 'bg-green-50 text-green-800 border-green-200'
-                  : 'bg-red-50 text-red-800 border-red-200'
-              }`}
-            >
-              {status.text}
-            </div>
-          )}
-
           {/* Total Asset Value summary bar */}
           {!loadingLibrary && <VaultSummaryBar docs={docs} />}
 
@@ -999,6 +1094,7 @@ export default function Dashboard() {
           )}
         </main>
       </div>
+        <BulkProgressBar queue={uploadQueue} />
     </SettingsContext.Provider>
   );
 }
