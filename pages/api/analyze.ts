@@ -8,6 +8,15 @@ import { supabaseAdmin } from '@/supabase/client';
 // Use lib directly to bypass index.js debug code that breaks under webpack/Next.js
 const pdfParse = require('pdf-parse/lib/pdf-parse.js');
 
+const IMAGE_EXTENSIONS = new Set(['png', 'jpg', 'jpeg', 'tiff', 'bmp']);
+const MIME_MAP: Record<string, string> = {
+  png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg',
+  tiff: 'image/tiff', bmp: 'image/bmp',
+};
+function getExt(filename: string): string {
+  return filename.split('.').pop()?.toLowerCase() ?? '';
+}
+
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || '');
 const model = genAI.getGenerativeModel({ model: 'gemini-2.5-flash' });
 
@@ -59,30 +68,51 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       return res.status(400).json({ error: 'Missing filename' });
     }
 
-    // 1. Parse PDF text
+    // 1. Read file from disk
     const filepath = join(process.cwd(), 'uploads', filename);
-    let fileBuffer;
+    let fileBuffer: Buffer;
     try {
       fileBuffer = await readFile(filepath);
     } catch (err) {
-      console.error('Failed to read PDF file:', filepath, err);
-      return res.status(422).json({ error: 'Could not read PDF file', details: String(err) });
+      console.error('Failed to read file:', filepath, err);
+      return res.status(422).json({ error: 'Could not read file', details: String(err) });
     }
-    if (!fileBuffer || !fileBuffer.length) {
-      console.error('PDF file buffer is empty:', filepath);
-      return res.status(422).json({ error: 'PDF file buffer is empty' });
+    if (!fileBuffer?.length) {
+      return res.status(422).json({ error: 'File buffer is empty' });
     }
-    let pdfData;
-    try {
-      pdfData = await pdfParse(fileBuffer);
-    } catch (err) {
-      console.error('pdf-parse failed:', err);
-      return res.status(422).json({ error: 'pdf-parse failed', details: String(err) });
-    }
-    const text: string = pdfData.text || '';
-    if (!text.trim()) {
-      console.error('No text extracted from PDF:', filename, { pdfMeta: pdfData && pdfData.info });
-      return res.status(422).json({ error: 'Could not extract text from PDF', details: pdfData });
+
+    // 2. Extract text — Gemini OCR for images, pdf-parse for PDFs
+    let text: string;
+    const ext = getExt(filename);
+    if (IMAGE_EXTENSIONS.has(ext)) {
+      const mimeType = MIME_MAP[ext] ?? 'image/jpeg';
+      try {
+        const ocrResult = await model.generateContent([
+          { inlineData: { data: fileBuffer.toString('base64'), mimeType } },
+          { text: 'You are an expert OCR agent. Extract all text from this image or document into plain text, preserving structure where possible. Return only the extracted text, no commentary.' },
+        ]);
+        text = ocrResult.response.text().trim();
+      } catch (err) {
+        console.error('Gemini OCR failed:', err);
+        return res.status(422).json({ error: 'Image OCR failed', details: String(err) });
+      }
+      if (!text) {
+        return res.status(422).json({ error: 'No text extracted from image' });
+      }
+    } else {
+      // PDF
+      let pdfData;
+      try {
+        pdfData = await pdfParse(fileBuffer);
+      } catch (err) {
+        console.error('pdf-parse failed:', err);
+        return res.status(422).json({ error: 'pdf-parse failed', details: String(err) });
+      }
+      text = pdfData.text || '';
+      if (!text.trim()) {
+        console.error('No text extracted from PDF:', filename);
+        return res.status(422).json({ error: 'Could not extract text from PDF', details: pdfData });
+      }
     }
 
     // 2. Bilingual summarization — single Gemini call returning JSON with both languages

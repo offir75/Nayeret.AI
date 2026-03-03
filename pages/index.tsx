@@ -82,6 +82,46 @@ const translations = {
     en: 'Potential Claim',
     he: 'תביעה פוטנציאלית',
   },
+  analyzing: {
+    en: 'Analyzing…',
+    he: 'מנתח…',
+  },
+  addDocuments: {
+    en: '+ Add Documents',
+    he: '+ הוסף מסמכים',
+  },
+  selectFiles: {
+    en: 'Select Files',
+    he: 'בחר קבצים',
+  },
+  selectFolder: {
+    en: 'Select Folder',
+    he: 'בחר תיקייה',
+  },
+  totalAssets: {
+    en: 'Total Assets',
+    he: 'סה"כ נכסים',
+  },
+  totalAssetsDesc: {
+    en: 'Across all financial reports',
+    he: 'בכל הדוחות הפיננסיים',
+  },
+  pendingBills: {
+    en: 'Pending Bills',
+    he: 'חשבונות לתשלום',
+  },
+  pendingBillsDesc: {
+    en: 'All bills combined · rate 1 USD = 3.70 ILS',
+    he: 'כל החשבונות יחד · שער 1 דולר = 3.7 ש״ח',
+  },
+  dropOverlay: {
+    en: 'Drop Documents into LifeVault',
+    he: 'שחרר מסמכים לתוך LifeVault',
+  },
+  dropOverlayHint: {
+    en: 'PDF, PNG, JPG, TIFF, BMP',
+    he: 'PDF, PNG, JPG, TIFF, BMP',
+  },
 };
 import { useState, useEffect, useRef, createContext, useContext } from 'react';
 import { useRouter } from 'next/router';
@@ -277,7 +317,7 @@ function Toggle({
 // ─── Total Asset Value bar ────────────────────────────────────────────────────
 
 function VaultSummaryBar({ docs }: { docs: VaultDoc[] }) {
-  const { currency, privacyMode } = useSettings();
+  const { currency, privacyMode, lang } = useSettings();
   const symbol = currency === 'ILS' ? '₪' : '$';
 
   let totalAssets = 0;
@@ -303,23 +343,23 @@ function VaultSummaryBar({ docs }: { docs: VaultDoc[] }) {
     : '';
 
   return (
-    <div className="mb-5 grid grid-cols-1 sm:grid-cols-2 gap-3" dir="ltr">
+    <div className="mb-5 grid grid-cols-1 sm:grid-cols-2 gap-3">
       {totalAssets > 0 && (
         <div className="bg-green-50 border border-green-200 rounded-xl px-4 py-3">
-          <p className="text-xs text-green-600 font-semibold uppercase tracking-wide">Total Assets</p>
+          <p className="text-xs text-green-600 font-semibold uppercase tracking-wide">{translations.totalAssets[lang]}</p>
           <p className={`text-2xl font-bold text-green-800 mt-0.5 ${blurCls}`} title={privacyMode ? 'Hover to reveal' : undefined}>
             {fmtMoney(totalAssets, symbol)}
           </p>
-          <p className="text-xs text-green-500 mt-0.5">Across all financial reports</p>
+          <p className="text-xs text-green-500 mt-0.5">{translations.totalAssetsDesc[lang]}</p>
         </div>
       )}
       {totalBills > 0 && (
         <div className="bg-blue-50 border border-blue-200 rounded-xl px-4 py-3">
-          <p className="text-xs text-blue-600 font-semibold uppercase tracking-wide">Pending Bills</p>
+          <p className="text-xs text-blue-600 font-semibold uppercase tracking-wide">{translations.pendingBills[lang]}</p>
           <p className={`text-2xl font-bold text-blue-800 mt-0.5 ${blurCls}`} title={privacyMode ? 'Hover to reveal' : undefined}>
             {fmtMoney(totalBills, symbol)}
           </p>
-          <p className="text-xs text-blue-500 mt-0.5">All bills combined · rate 1 USD = {USD_TO_ILS} ILS</p>
+          <p className="text-xs text-blue-500 mt-0.5">{translations.pendingBillsDesc[lang]}</p>
         </div>
       )}
     </div>
@@ -681,6 +721,15 @@ function EmptyState({ isSearch }: { isSearch: boolean }) {
   );
 }
 
+// ─── Supported file types ─────────────────────────────────────────────────────
+
+const SUPPORTED_EXTENSIONS = ['.pdf', '.png', '.jpg', '.jpeg', '.tiff', '.bmp'];
+
+function isSupportedFile(name: string): boolean {
+  const lower = name.toLowerCase();
+  return SUPPORTED_EXTENSIONS.some(ext => lower.endsWith(ext));
+}
+
 // ─── Upload queue ─────────────────────────────────────────────────────────────
 
 interface UploadJob {
@@ -751,6 +800,97 @@ function BulkProgressBar({ queue }: { queue: UploadJob[] }) {
   );
 }
 
+// ─── Ingestion Hub ────────────────────────────────────────────────────────────
+
+function IngestionHub({
+  onFiles,
+  disabled,
+}: {
+  onFiles: (files: File[]) => void;
+  disabled: boolean;
+}) {
+  const { lang } = useSettings();
+  const [open, setOpen] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const folderInputRef = useRef<HTMLInputElement>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  // Close dropdown on outside click
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
+        setOpen(false);
+      }
+    };
+    if (open) document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [open]);
+
+  const accepted = SUPPORTED_EXTENSIONS.join(',');
+
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(e.target.files ?? []);
+    if (files.length) onFiles(files);
+    if (fileInputRef.current) fileInputRef.current.value = '';
+    setOpen(false);
+  };
+
+  const handleFolderChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(e.target.files ?? []).filter(f => isSupportedFile(f.name));
+    if (files.length) onFiles(files);
+    if (folderInputRef.current) folderInputRef.current.value = '';
+    setOpen(false);
+  };
+
+  return (
+    <div ref={containerRef} className="relative">
+      <button
+        onClick={() => !disabled && setOpen(o => !o)}
+        disabled={disabled}
+        className="flex items-center gap-2 bg-indigo-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-indigo-700 disabled:bg-indigo-400 disabled:cursor-not-allowed transition-colors"
+      >
+        {disabled ? (
+          <>
+            <Spinner size="sm" />
+            <span>{translations.analyzing[lang]}</span>
+          </>
+        ) : (
+          <>
+            <span>{translations.addDocuments[lang]}</span>
+            <svg className="w-3.5 h-3.5 opacity-70" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+            </svg>
+          </>
+        )}
+      </button>
+
+      {open && !disabled && (
+        <div className={`absolute top-full mt-1.5 ${lang === 'he' ? 'left-0' : 'right-0'} w-44 bg-white rounded-xl shadow-lg border border-gray-200 overflow-hidden z-30`}>
+          <button
+            onClick={() => fileInputRef.current?.click()}
+            className="w-full flex items-center gap-2.5 px-4 py-2.5 text-sm text-gray-700 hover:bg-gray-50 transition-colors"
+            dir={lang === 'he' ? 'rtl' : 'ltr'}
+          >
+            <span>📄</span>
+            <span>{translations.selectFiles[lang]}</span>
+          </button>
+          <button
+            onClick={() => folderInputRef.current?.click()}
+            className="w-full flex items-center gap-2.5 px-4 py-2.5 text-sm text-gray-700 hover:bg-gray-50 border-t border-gray-100 transition-colors"
+            dir={lang === 'he' ? 'rtl' : 'ltr'}
+          >
+            <span>📁</span>
+            <span>{translations.selectFolder[lang]}</span>
+          </button>
+        </div>
+      )}
+
+      <input ref={fileInputRef} type="file" accept={accepted} multiple onChange={handleFileChange} className="hidden" />
+      <input ref={folderInputRef} type="file" accept={accepted} multiple onChange={handleFolderChange} className="hidden" {...({ webkitdirectory: '' } as {})} />
+    </div>
+  );
+}
+
 // ─── Main Dashboard ───────────────────────────────────────────────────────────
 
 export default function Dashboard() {
@@ -774,8 +914,6 @@ export default function Dashboard() {
   const [loadingLibrary, setLoadingLibrary] = useState(true);
   const [uploadQueue, setUploadQueue] = useState<UploadJob[]>([]);
   const [search, setSearch] = useState('');
-  const fileInputRef = useRef<HTMLInputElement>(null);
-  const folderInputRef = useRef<HTMLInputElement>(null);
 
   // ── Persist helpers ────────────────────────────────────────────────────────
 
@@ -851,17 +989,14 @@ export default function Dashboard() {
 
   // ── Upload ─────────────────────────────────────────────────────────────────
 
-  const handleUploadClick = () => fileInputRef.current?.click();
-  const handleFolderClick  = () => folderInputRef.current?.click();
-
   const handleFiles = async (files: File[]) => {
     if (!session) return;
-    const pdfs = files.filter(f => f.name.toLowerCase().endsWith('.pdf'));
-    if (pdfs.length === 0) return;
+    const supported = files.filter(f => isSupportedFile(f.name));
+    if (supported.length === 0) return;
 
     // Deduplicate against existing docs and within the batch itself
     const existingNames = new Set(docs.map(d => d.file_name));
-    const jobs: UploadJob[] = pdfs.map((file) => {
+    const jobs: UploadJob[] = supported.map((file) => {
       const resolved = resolveFilename(file.name, existingNames);
       existingNames.add(resolved);
       return { id: Math.random().toString(36).slice(2), originalFile: file, resolvedName: resolved, status: 'queued' as const };
@@ -910,21 +1045,15 @@ export default function Dashboard() {
     setTimeout(() => setUploadQueue(prev => prev.filter(j => !jobIds.has(j.id))), 4000);
   };
 
-  const handleFileInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = Array.from(e.target.files ?? []);
-    if (files.length) handleFiles(files);
-    if (fileInputRef.current) fileInputRef.current.value = '';
-  };
-
-  const handleFolderChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = Array.from(e.target.files ?? []).filter(f => f.name.toLowerCase().endsWith('.pdf'));
-    if (files.length) handleFiles(files);
-    if (folderInputRef.current) folderInputRef.current.value = '';
-  };
-
   const { getRootProps, isDragActive } = useDropzone({
     onDrop: handleFiles,
-    accept: { 'application/pdf': ['.pdf'] },
+    accept: {
+      'application/pdf': ['.pdf'],
+      'image/png': ['.png'],
+      'image/jpeg': ['.jpg', '.jpeg'],
+      'image/tiff': ['.tiff'],
+      'image/bmp': ['.bmp'],
+    },
     noClick: true,
     noKeyboard: true,
   });
@@ -974,9 +1103,9 @@ export default function Dashboard() {
             <div className="bg-white rounded-2xl shadow-2xl border-2 border-dashed border-indigo-400 px-12 py-10 text-center">
               <div className="text-5xl mb-3">📂</div>
               <p className="text-xl font-bold text-indigo-700">
-                {lang === 'he' ? 'שחרר מסמכים לתוך LifeVault' : 'Drop Documents into LifeVault'}
+                {translations.dropOverlay[lang]}
               </p>
-              <p className="text-sm text-indigo-500 mt-1">PDF {lang === 'he' ? 'בלבד' : 'files only'}</p>
+              <p className="text-sm text-indigo-500 mt-1">{translations.dropOverlayHint[lang]}</p>
             </div>
           </div>
         )}
@@ -998,30 +1127,7 @@ export default function Dashboard() {
           </div>
 
           <div className="flex items-center gap-2">
-            <button
-              onClick={handleUploadClick}
-              disabled={isUploading}
-              className="flex items-center gap-2 bg-indigo-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-indigo-700 disabled:bg-indigo-400 disabled:cursor-not-allowed transition-colors"
-            >
-              {isUploading ? (
-                <>
-                  <Spinner size="sm" />
-                  <span>{lang === 'he' ? 'מנתח…' : 'Analyzing…'}</span>
-                </>
-              ) : (
-                lang === 'he' ? '+ העלה PDF' : '+ Upload PDF'
-              )}
-            </button>
-
-            {/* Select Folder */}
-            <button
-              onClick={handleFolderClick}
-              disabled={isUploading}
-              className="flex items-center gap-1.5 border border-gray-300 text-gray-700 px-3 py-2 rounded-lg text-sm font-medium hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-              title={lang === 'he' ? 'בחר תיקייה' : 'Select Folder'}
-            >
-              📁 {lang === 'he' ? 'תיקייה' : 'Folder'}
-            </button>
+            <IngestionHub onFiles={handleFiles} disabled={isUploading} />
 
             {/* User avatar — display only */}
             <div className="shrink-0">
@@ -1048,9 +1154,6 @@ export default function Dashboard() {
               <FiSettings className="w-5 h-5" />
             </button>
           </div>
-
-          <input ref={fileInputRef} type="file" accept=".pdf" multiple onChange={handleFileInputChange} className="hidden" />
-          <input ref={folderInputRef} type="file" accept=".pdf" multiple onChange={handleFolderChange} className="hidden" {...({ webkitdirectory: '' } as {})} />
         </header>
 
         <main className="max-w-5xl mx-auto px-6 py-6">
