@@ -1,0 +1,27 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(curl -s http://localhost:3000/api/analyze)",
+      "Bash(curl -s -X POST http://localhost:3000/api/analyze -H \"Content-Type: application/json\" -d '{\"\"filename\"\":\"\"bezeq bill august 2025.pdf\"\"}')",
+      "Bash(node -e \"const p = require\\(''pdf-parse''\\); console.log\\(typeof p, typeof p.default, Object.keys\\(p\\).slice\\(0,10\\)\\)\")",
+      "Bash(npm install pdf-parse@1.1.1 --save)",
+      "Bash(node -e \":*)",
+      "Bash(pkill -f \"next dev\")",
+      "Bash(taskkill /PID 26320 /F)",
+      "Bash(taskkill /PID 36144 /F)",
+      "Bash(taskkill /PID 11296 /F)",
+      "Bash(taskkill /PID 41688 /F)",
+      "Bash(taskkill /PID 38400 /F)",
+      "Bash(taskkill /PID 40936 /F)",
+      "Bash(taskkill /PID 20156 /F)",
+      "Bash(netstat -ano)",
+      "Bash(powershell -Command \":*)",
+      "Bash(powershell -Command \"Stop-Process -Id 26320,36144,11296,41688,38400,40936,20156 -Force -ErrorAction SilentlyContinue; Write-Host ''Done''\")",
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\" http://localhost:3000/)",
+      "Bash(curl -s http://localhost:3000/api/documents)",
+      "Bash(curl -s http://localhost:3000/)",
+      "Bash(powershell -Command \"Get-NetTCPConnection -LocalPort 3000,3001,3002,3003,3004,3005 -ErrorAction SilentlyContinue | Select-Object -ExpandProperty OwningProcess | Sort-Object -Unique | ForEach-Object { Stop-Process -Id $_-Force -ErrorAction SilentlyContinue }\")",
+      "Bash(powershell -Command \"Get-Process node -ErrorAction SilentlyContinue | Stop-Process -Force\")"
+    ]
+  }
+}
