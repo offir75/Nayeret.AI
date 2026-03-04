@@ -450,9 +450,13 @@ function BulkProgressBar({ queue }: { queue: UploadJob[] }) {
           />
         </div>
         {allDone && errors > 0 && (
-          <p className="text-xs text-destructive mt-1">
-            {translations.progressFailed[lang]} {queue.filter(j => j.status === 'error').map(j => j.resolvedName).join(', ')}
-          </p>
+          <div className="mt-1 space-y-0.5">
+            {queue.filter(j => j.status === 'error').map(j => (
+              <p key={j.id} className="text-xs text-destructive">
+                {translations.progressFailed[lang]} {j.resolvedName}{j.errorMsg ? ` — ${j.errorMsg}` : ''}
+              </p>
+            ))}
+          </div>
         )}
       </div>
     </div>
@@ -539,6 +543,37 @@ async function renderPdfThumbnail(file: File): Promise<string> {
   canvas.height = viewport.height;
   await page.render({ canvasContext: canvas.getContext('2d')!, viewport }).promise;
   return canvas.toDataURL('image/jpeg', 0.85).split(',')[1];
+}
+
+/** Convert HEIC/HEIF to JPEG via canvas, and downscale if > 4000px on any side.
+ *  Returns the original file unchanged if it's already a supported non-HEIC format. */
+async function normalizeImageFile(file: File): Promise<File> {
+  const ext = file.name.split('.').pop()?.toLowerCase() ?? '';
+  const isHeic = ext === 'heic' || ext === 'heif' || file.type === 'image/heic' || file.type === 'image/heif';
+  const MAX_SIDE = 4000;
+  const needsConvert = isHeic;
+  const url = URL.createObjectURL(file);
+  return new Promise((resolve) => {
+    const img = new Image();
+    img.onload = () => {
+      const w = img.naturalWidth;
+      const h = img.naturalHeight;
+      const scale = Math.min(1, MAX_SIDE / Math.max(w, h));
+      if (!needsConvert && scale === 1) { URL.revokeObjectURL(url); resolve(file); return; }
+      const canvas = document.createElement('canvas');
+      canvas.width  = Math.round(w * scale);
+      canvas.height = Math.round(h * scale);
+      canvas.getContext('2d')!.drawImage(img, 0, 0, canvas.width, canvas.height);
+      URL.revokeObjectURL(url);
+      canvas.toBlob(blob => {
+        if (!blob) { resolve(file); return; }
+        const newName = file.name.replace(/\.(heic|heif)$/i, '.jpg');
+        resolve(new File([blob], newName, { type: 'image/jpeg' }));
+      }, 'image/jpeg', 0.92);
+    };
+    img.onerror = () => { URL.revokeObjectURL(url); resolve(file); };
+    img.src = url;
+  });
 }
 
 async function renderImageThumbnail(file: File): Promise<string> {
@@ -1084,7 +1119,8 @@ export default function Dashboard() {
 
   const handleFiles = async (files: File[]) => {
     if (!session) return;
-    const supported = files.filter(f => isSupportedFile(f.name));
+    // Accept by extension OR by MIME type (handles iOS photos with no/unknown extension)
+    const supported = files.filter(f => isSupportedFile(f.name) || f.type.startsWith('image/') || f.type === 'application/pdf');
     if (supported.length === 0) return;
 
     const existingNames = new Set(docs.map(d => d.file_name));
@@ -1101,19 +1137,26 @@ export default function Dashboard() {
       try {
         const { data: { session: fresh } } = await supabase.auth.getSession();
         const token = fresh?.access_token ?? '';
-        const base64 = await readFileAsBase64(job.originalFile);
+
+        // Normalize: convert HEIC/HEIF → JPEG on the client before uploading
+        const normalizedFile = await normalizeImageFile(job.originalFile);
+        const normalizedName = normalizedFile !== job.originalFile
+          ? resolveFilename(normalizedFile.name, new Set(docs.map(d => d.file_name)))
+          : job.resolvedName;
+
+        const base64 = await readFileAsBase64(normalizedFile);
 
         const uploadRes = await fetch('/api/upload', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-          body: JSON.stringify({ file: base64, filename: job.resolvedName }),
+          body: JSON.stringify({ file: base64, filename: normalizedName }),
         });
         if (!uploadRes.ok) throw new Error((await uploadRes.json()).error ?? 'Upload failed');
 
         const analyzeRes = await fetch('/api/analyze', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-          body: JSON.stringify({ filename: job.resolvedName, mimeType: job.originalFile.type }),
+          body: JSON.stringify({ filename: normalizedName, mimeType: normalizedFile.type }),
         });
         const d = await analyzeRes.json();
         if (!analyzeRes.ok || !d.success) throw new Error(d.error ?? 'Analysis failed');
@@ -1121,7 +1164,7 @@ export default function Dashboard() {
         const supabaseId: string = d.supabaseId;
         const newDoc: VaultDoc = {
           id: supabaseId,
-          file_name: job.resolvedName,
+          file_name: normalizedName,
           document_type: d.document_type ?? 'other',
           summary_he: d.summary_he ?? null,
           summary_en: d.summary_en ?? null,
@@ -1133,8 +1176,8 @@ export default function Dashboard() {
         setUploadQueue(prev => prev.map(j => j.id === job.id ? { ...j, status: 'done' } : j));
 
         if (supabaseId) {
-          const ext = job.resolvedName.split('.').pop()?.toLowerCase() ?? '';
-          const thumbPromise = ext === 'pdf' ? renderPdfThumbnail(job.originalFile) : renderImageThumbnail(job.originalFile);
+          const ext = normalizedName.split('.').pop()?.toLowerCase() ?? '';
+          const thumbPromise = ext === 'pdf' ? renderPdfThumbnail(normalizedFile) : renderImageThumbnail(normalizedFile);
           thumbPromise
             .then(base64 => fetch('/api/thumbnail', {
               method: 'POST',
