@@ -1198,16 +1198,22 @@ function VaultRow({
 
 type SortCol = 'name' | 'category' | 'amount' | 'due_date' | 'uploaded';
 
-function SortIcon({ col, active, dir }: { col: SortCol; active: boolean; dir: 'asc' | 'desc' }) {
-  return (
-    <span className={`inline-flex flex-col ml-1 leading-none ${active ? 'text-indigo-500' : 'text-gray-300'}`}>
-      <svg viewBox="0 0 6 4" className={`w-2 h-2 ${active && dir === 'asc' ? 'text-indigo-600' : ''}`} fill="currentColor">
-        <path d="M3 0L6 4H0L3 0Z" />
+function SortIcon({ active, dir }: { active: boolean; dir: 'asc' | 'desc' }) {
+  if (!active) {
+    return (
+      <svg className="inline-block ml-1 w-3 h-3 align-middle text-gray-300 -mt-0.5" viewBox="0 0 8 12" fill="currentColor">
+        <path d="M4 0L8 5H0L4 0Z M4 12L0 7H8L4 12Z" />
       </svg>
-      <svg viewBox="0 0 6 4" className={`w-2 h-2 ${active && dir === 'desc' ? 'text-indigo-600' : ''}`} fill="currentColor">
-        <path d="M3 4L0 0H6L3 4Z" />
-      </svg>
-    </span>
+    );
+  }
+  return dir === 'asc' ? (
+    <svg className="inline-block ml-1 w-3 h-3 align-middle text-indigo-500 -mt-0.5" viewBox="0 0 8 6" fill="currentColor">
+      <path d="M4 0L8 6H0L4 0Z" />
+    </svg>
+  ) : (
+    <svg className="inline-block ml-1 w-3 h-3 align-middle text-indigo-500 -mt-0.5" viewBox="0 0 8 6" fill="currentColor">
+      <path d="M4 6L0 0H8L4 6Z" />
+    </svg>
   );
 }
 
@@ -1276,23 +1282,23 @@ function VaultTable({
             <th className="w-12 py-3 px-3" />
             <th className={`${thBase} text-start`} onClick={() => handleSort('name')}>
               {translations.colFilename[lang]}
-              <SortIcon col="name" active={sortCol === 'name'} dir={sortDir} />
+              <SortIcon active={sortCol === 'name'} dir={sortDir} />
             </th>
             <th className={thBase} onClick={() => handleSort('category')}>
               {translations.colCategory[lang]}
-              <SortIcon col="category" active={sortCol === 'category'} dir={sortDir} />
+              <SortIcon active={sortCol === 'category'} dir={sortDir} />
             </th>
             <th className={`${thBase} text-end hidden sm:table-cell`} onClick={() => handleSort('amount')}>
               {translations.colAmount[lang]}
-              <SortIcon col="amount" active={sortCol === 'amount'} dir={sortDir} />
+              <SortIcon active={sortCol === 'amount'} dir={sortDir} />
             </th>
             <th className={`${thBase} text-end hidden sm:table-cell`} onClick={() => handleSort('due_date')}>
               {translations.colDueDate[lang]}
-              <SortIcon col="due_date" active={sortCol === 'due_date'} dir={sortDir} />
+              <SortIcon active={sortCol === 'due_date'} dir={sortDir} />
             </th>
             <th className={`${thBase} text-end hidden sm:table-cell`} onClick={() => handleSort('uploaded')}>
               {translations.colUploaded[lang]}
-              <SortIcon col="uploaded" active={sortCol === 'uploaded'} dir={sortDir} />
+              <SortIcon active={sortCol === 'uploaded'} dir={sortDir} />
             </th>
             <th className="py-3 px-3 font-semibold text-gray-600 text-xs uppercase tracking-wide text-center">
               {translations.colStatus[lang]}
