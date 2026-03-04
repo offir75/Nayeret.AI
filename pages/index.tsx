@@ -127,11 +127,12 @@ const translations = {
     en: 'PDF, PNG, JPG, TIFF, BMP',
     he: 'PDF, PNG, JPG, TIFF, BMP',
   },
-  colFilename:  { en: 'Filename',    he: 'שם קובץ' },
-  colCategory:  { en: 'Category',   he: 'קטגוריה' },
-  colAmount:    { en: 'Amount',     he: 'סכום' },
-  colDueDate:   { en: 'Due Date',   he: 'תאריך פירעון' },
-  colStatus:    { en: 'Status',     he: 'סטטוס' },
+  colFilename:  { en: 'Filename',      he: 'שם קובץ'       },
+  colCategory:  { en: 'Category',     he: 'קטגוריה'       },
+  colAmount:    { en: 'Amount',       he: 'סכום'          },
+  colDueDate:   { en: 'Due Date',     he: 'תאריך פירעון'  },
+  colUploaded:  { en: 'Uploaded',     he: 'הועלה'         },
+  colStatus:    { en: 'Status',       he: 'סטטוס'         },
   tableDetails: { en: 'Details',    he: 'פרטים' },
   tableSummary:     { en: 'Summary',           he: 'סיכום'        },
   mediaDescription: { en: 'Media Description', he: 'תיאור מדיה'   },
@@ -1087,9 +1088,6 @@ function VaultRow({
           <p className="text-sm font-medium text-gray-800 truncate max-w-[180px]" title={doc.file_name}>
             {doc.file_name}
           </p>
-          <p className="text-xs text-gray-400 mt-0.5">
-            {new Date(doc.created_at).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })}
-          </p>
         </td>
         <td className="py-2 px-3">
           <div className="flex items-center gap-1.5">
@@ -1107,6 +1105,9 @@ function VaultRow({
         <td className="py-2 px-3 text-xs text-right hidden sm:table-cell text-gray-500">
           {dueDateStr ?? <span className="text-gray-300">—</span>}
         </td>
+        <td className="py-2 px-3 text-xs text-right hidden sm:table-cell text-gray-400 tabular-nums">
+          {new Date(doc.created_at).toLocaleDateString(lang === 'he' ? 'he-IL' : 'en-GB', { day: '2-digit', month: 'short', year: 'numeric' })}
+        </td>
         <td className="py-2 px-3">
           <div className="flex gap-1 justify-center">
             {dots.map((dot, i) => (
@@ -1118,7 +1119,7 @@ function VaultRow({
 
       {expanded && (
         <tr className="bg-gray-50 border-t border-gray-200">
-          <td colSpan={6} className="px-5 py-4">
+          <td colSpan={7} className="px-5 py-4">
             <div className="flex flex-col gap-3" dir={lang === 'he' ? 'rtl' : 'ltr'}>
               {ra.is_media ? (
                 <div>
@@ -1193,6 +1194,52 @@ function VaultRow({
   );
 }
 
+// ─── Sort helpers ─────────────────────────────────────────────────────────────
+
+type SortCol = 'name' | 'category' | 'amount' | 'due_date' | 'uploaded';
+
+function SortIcon({ col, active, dir }: { col: SortCol; active: boolean; dir: 'asc' | 'desc' }) {
+  return (
+    <span className={`inline-flex flex-col ml-1 leading-none ${active ? 'text-indigo-500' : 'text-gray-300'}`}>
+      <svg viewBox="0 0 6 4" className={`w-2 h-2 ${active && dir === 'asc' ? 'text-indigo-600' : ''}`} fill="currentColor">
+        <path d="M3 0L6 4H0L3 0Z" />
+      </svg>
+      <svg viewBox="0 0 6 4" className={`w-2 h-2 ${active && dir === 'desc' ? 'text-indigo-600' : ''}`} fill="currentColor">
+        <path d="M3 4L0 0H6L3 4Z" />
+      </svg>
+    </span>
+  );
+}
+
+function getDocAmount(doc: VaultDoc): number {
+  const ra = doc.raw_analysis ?? {};
+  const v = ra.total_amount ?? ra.total_balance ?? ra.premium_amount;
+  return v !== undefined && v !== null ? Number(v) : -Infinity;
+}
+
+function getDocDueDate(doc: VaultDoc): number {
+  const ra = doc.raw_analysis ?? {};
+  const d = ra.due_date ?? ra.expiry_date ?? ra.liquidity_date ?? ra.claim_date ?? ra.purchase_date;
+  if (!d) return Infinity;
+  const t = new Date(String(d)).getTime();
+  return isNaN(t) ? Infinity : t;
+}
+
+function sortDocs(docs: VaultDoc[], col: SortCol, dir: 'asc' | 'desc'): VaultDoc[] {
+  const asc = dir === 'asc';
+  return [...docs].sort((a, b) => {
+    let cmp = 0;
+    switch (col) {
+      case 'name':     cmp = a.file_name.localeCompare(b.file_name); break;
+      case 'category': cmp = a.document_type.localeCompare(b.document_type); break;
+      case 'amount':   cmp = getDocAmount(a) - getDocAmount(b); break;
+      case 'due_date': cmp = getDocDueDate(a) - getDocDueDate(b); break;
+      case 'uploaded': cmp = new Date(a.created_at).getTime() - new Date(b.created_at).getTime(); break;
+    }
+    return asc ? cmp : -cmp;
+  });
+}
+
 function VaultTable({
   docs, token, onDelete,
 }: {
@@ -1202,9 +1249,24 @@ function VaultTable({
 }) {
   const { lang } = useSettings();
   const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [sortCol, setSortCol] = useState<SortCol>('uploaded');
+  const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
   const hasInsurance = docs.some((d) => d.document_type === 'insurances');
 
   const toggle = (id: string) => setExpandedId(prev => prev === id ? null : id);
+
+  const handleSort = (col: SortCol) => {
+    if (col === sortCol) {
+      setSortDir(d => d === 'asc' ? 'desc' : 'asc');
+    } else {
+      setSortCol(col);
+      setSortDir('asc');
+    }
+  };
+
+  const sorted = sortDocs(docs, sortCol, sortDir);
+
+  const thBase = 'py-3 px-3 font-semibold text-gray-600 text-xs uppercase tracking-wide select-none cursor-pointer hover:text-indigo-600 transition-colors';
 
   return (
     <div className="overflow-x-auto rounded-xl border border-gray-200 shadow-sm">
@@ -1212,17 +1274,25 @@ function VaultTable({
         <thead className="bg-gray-50 border-b border-gray-200">
           <tr>
             <th className="w-12 py-3 px-3" />
-            <th className="py-3 px-3 text-start font-semibold text-gray-600 text-xs uppercase tracking-wide">
+            <th className={`${thBase} text-start`} onClick={() => handleSort('name')}>
               {translations.colFilename[lang]}
+              <SortIcon col="name" active={sortCol === 'name'} dir={sortDir} />
             </th>
-            <th className="py-3 px-3 font-semibold text-gray-600 text-xs uppercase tracking-wide">
+            <th className={thBase} onClick={() => handleSort('category')}>
               {translations.colCategory[lang]}
+              <SortIcon col="category" active={sortCol === 'category'} dir={sortDir} />
             </th>
-            <th className="py-3 px-3 font-semibold text-gray-600 text-xs uppercase tracking-wide text-end hidden sm:table-cell">
+            <th className={`${thBase} text-end hidden sm:table-cell`} onClick={() => handleSort('amount')}>
               {translations.colAmount[lang]}
+              <SortIcon col="amount" active={sortCol === 'amount'} dir={sortDir} />
             </th>
-            <th className="py-3 px-3 font-semibold text-gray-600 text-xs uppercase tracking-wide text-end hidden sm:table-cell">
+            <th className={`${thBase} text-end hidden sm:table-cell`} onClick={() => handleSort('due_date')}>
               {translations.colDueDate[lang]}
+              <SortIcon col="due_date" active={sortCol === 'due_date'} dir={sortDir} />
+            </th>
+            <th className={`${thBase} text-end hidden sm:table-cell`} onClick={() => handleSort('uploaded')}>
+              {translations.colUploaded[lang]}
+              <SortIcon col="uploaded" active={sortCol === 'uploaded'} dir={sortDir} />
             </th>
             <th className="py-3 px-3 font-semibold text-gray-600 text-xs uppercase tracking-wide text-center">
               {translations.colStatus[lang]}
@@ -1230,7 +1300,7 @@ function VaultTable({
           </tr>
         </thead>
         <tbody className="divide-y divide-gray-100">
-          {docs.map((doc) => (
+          {sorted.map((doc) => (
             <VaultRow
               key={doc.id}
               doc={doc}
