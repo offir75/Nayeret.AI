@@ -101,7 +101,35 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         return res.status(422).json({ error: 'Image OCR failed', details: String(err) });
       }
       if (!text) {
-        return res.status(422).json({ error: 'No text extracted from image' });
+        // No text found — describe the image visually and save as media
+        let mediaSummaries: { he: string; en: string } = { he: '', en: '' };
+        try {
+          const descResult = await model.generateContent([
+            { inlineData: { data: fileBuffer.toString('base64'), mimeType } },
+            { text: 'Describe this image in one sentence per language.\nReturn a JSON object with exactly two keys: "he" (Hebrew) and "en" (English).\nReturn only the JSON object, no other text.' },
+          ]);
+          const raw = descResult.response.text().trim().replace(/^```(?:json)?\n?/, '').replace(/\n?```$/, '').trim();
+          const parsed = JSON.parse(raw);
+          mediaSummaries = { he: parsed.he ?? '', en: parsed.en ?? raw };
+        } catch { /* leave summaries empty if vision description also fails */ }
+
+        const { data: mediaData } = await supabaseAdmin
+          .from('documents')
+          .upsert([{
+            file_name: filename, owner_id: userId,
+            document_type: 'other',
+            summary_he: mediaSummaries.he, summary_en: mediaSummaries.en,
+            raw_analysis: { is_media: true },
+          }], { onConflict: 'file_name,owner_id' })
+          .select();
+        return res.status(200).json({
+          success: true, filename,
+          summary_he: mediaSummaries.he, summary_en: mediaSummaries.en,
+          document_group: 'Other', document_type: 'other',
+          raw_metadata: { is_media: true },
+          supabaseId: mediaData?.[0]?.id ?? null,
+          is_media: true,
+        });
       }
     } else {
       // PDF — try pdf-parse first, fall back to Gemini OCR for scanned/image-based PDFs
