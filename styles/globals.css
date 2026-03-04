@@ -1,3 +1,43 @@
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+:root {
+  /* Zen palette: warm sand background, stone foreground, sage accent */
+  --background: #f5f0eb;
+  --foreground: #2c2825;
+  --card: #faf7f4;
+  --card-foreground: #2c2825;
+  --popover: #faf7f4;
+  --popover-foreground: #2c2825;
+  --primary: #2c2825;
+  --primary-foreground: #faf7f4;
+  --secondary: #ede8e2;
+  --secondary-foreground: #2c2825;
+  --muted: #ede8e2;
+  --muted-foreground: #8a8178;
+  --accent: #7a8c6e;
+  --accent-foreground: #faf7f4;
+  --destructive: #c4584a;
+  --destructive-foreground: #faf7f4;
+  --border: #ddd6ce;
+  --input: #ddd6ce;
+  --ring: #7a8c6e;
+  --radius: 0.75rem;
+
+  /* Custom Zen tokens */
+  --zen-sage: #7a8c6e;
+  --zen-sage-light: #e8ede5;
+  --zen-sand: #f5f0eb;
+  --zen-stone: #2c2825;
+  --zen-warm: #c4a97d;
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+  body {
+    @apply bg-background text-foreground antialiased;
+  }
+}
