@@ -1,4 +1,4 @@
-# LifeVault
+# Nayeret.AI
 
 This is a basic Next.js dashboard project with Tailwind CSS.
 
