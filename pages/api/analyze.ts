@@ -30,7 +30,7 @@ async function callGemini(prompt: string, jsonMode = false): Promise<string> {
   return text;
 }
 
-type DocumentType = 'bill' | 'financial_report' | 'receipt' | 'claim' | 'other';
+type DocumentType = 'bill' | 'financial_report' | 'receipt' | 'claim' | 'insurance' | 'identification' | 'other';
 
 function toDocumentType(group: string): DocumentType {
   const g = group.trim().toLowerCase();
@@ -38,7 +38,9 @@ function toDocumentType(group: string): DocumentType {
   if (g === 'financial reports') return 'financial_report';
   if (g === 'receipts') return 'receipt';
   if (g === 'tax/insurance claims' || g === 'claims') return 'claim';
-  return 'other'; // insurances, identification, other
+  if (g === 'insurances' || g === 'insurance') return 'insurance';
+  if (g === 'identification') return 'identification';
+  return 'other';
 }
 
 /** Extract and validate the caller's user ID from the Authorization header. */
@@ -100,7 +102,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         return res.status(422).json({ error: 'No text extracted from image' });
       }
     } else {
-      // PDF
+      // PDF — try pdf-parse first, fall back to Gemini OCR for scanned/image-based PDFs
       let pdfData;
       try {
         pdfData = await pdfParse(fileBuffer);
@@ -110,12 +112,54 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       }
       text = pdfData.text || '';
       if (!text.trim()) {
-        console.error('No text extracted from PDF:', filename);
-        return res.status(422).json({ error: 'Could not extract text from PDF', details: pdfData });
+        // Scanned or image-based PDF — fall back to Gemini OCR
+        console.warn('pdf-parse returned no text, falling back to Gemini OCR:', filename);
+        try {
+          const ocrResult = await model.generateContent([
+            { inlineData: { data: fileBuffer.toString('base64'), mimeType: 'application/pdf' } },
+            { text: 'You are an expert OCR agent. Extract all text from this PDF document into plain text, preserving structure where possible. Return only the extracted text, no commentary.' },
+          ]);
+          text = ocrResult.response.text().trim();
+        } catch (err) {
+          console.error('Gemini PDF OCR failed:', err);
+          return res.status(422).json({ error: 'Could not extract text from PDF (OCR fallback also failed)', details: String(err) });
+        }
+        if (!text) {
+          return res.status(422).json({ error: 'Could not extract any text from PDF' });
+        }
       }
     }
 
-    // 2. Bilingual summarization — single Gemini call returning JSON with both languages
+    // 2. Triage: is this a real document or a logo/photo/meme?
+    const triageResult = await callGemini(
+      `Is the following text extracted from a financial, legal, identity, or business document ` +
+      `(bill, bank report, insurance policy, receipt, claim, ID, passport, contract)?\n` +
+      `Answer ONLY "yes" or "no".\n\nText:\n${text.slice(0, 2000)}`
+    );
+    if (!triageResult.toLowerCase().startsWith('y')) {
+      const oneliner = await callGemini(
+        `In one sentence (in English), describe what this content appears to be.\n\nText:\n${text.slice(0, 1000)}`
+      );
+      const { data: mediaData } = await supabaseAdmin
+        .from('documents')
+        .upsert([{
+          file_name: filename, owner_id: userId,
+          document_type: 'other',
+          summary_he: '', summary_en: oneliner,
+          raw_analysis: { is_media: true },
+        }], { onConflict: 'file_name,owner_id' })
+        .select();
+      return res.status(200).json({
+        success: true, filename,
+        summary_he: '', summary_en: oneliner,
+        document_group: 'Other', document_type: 'other',
+        raw_metadata: { is_media: true },
+        supabaseId: mediaData?.[0]?.id ?? null,
+        is_media: true,
+      });
+    }
+
+    // 3. Bilingual summarization — single Gemini call returning JSON with both languages
     const summaryPrompt =
       `Summarize the following document in exactly 2 sentences per language.\n` +
       `Return a JSON object with exactly two keys:\n` +
@@ -168,6 +212,18 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         extractionPrompt =
           `Extract the following fields as a JSON object:\n` +
           `claim_type, policy_number, insurer, total_amount, currency, claim_date (YYYY-MM-DD), status\n\n` +
+          `Document:\n${text.slice(0, 6000)}`;
+        break;
+      case 'insurance':
+        extractionPrompt =
+          `Extract the following fields as a JSON object:\n` +
+          `insurer, policy_number, premium_amount, currency, coverage_type, expiry_date (YYYY-MM-DD)\n\n` +
+          `Document:\n${text.slice(0, 6000)}`;
+        break;
+      case 'identification':
+        extractionPrompt =
+          `Extract the following fields as a JSON object:\n` +
+          `id_type, full_name, id_number, issue_date (YYYY-MM-DD), expiry_date (YYYY-MM-DD), issuing_authority\n\n` +
           `Document:\n${text.slice(0, 6000)}`;
         break;
       default:

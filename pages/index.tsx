@@ -1,3 +1,4 @@
+import Head from 'next/head';
 import { FiSettings } from 'react-icons/fi';
 // Extend translations for settings panel
 // ─── Translations ───────────────────────────────────────────────────────────
@@ -86,6 +87,10 @@ const translations = {
     en: 'Analyzing…',
     he: 'מנתח…',
   },
+  progressFailed: {
+    en: 'Failed:',
+    he: 'נכשל:',
+  },
   addDocuments: {
     en: '+ Add Documents',
     he: '+ הוסף מסמכים',
@@ -115,8 +120,8 @@ const translations = {
     he: 'כל החשבונות יחד · שער 1 דולר = 3.7 ש״ח',
   },
   dropOverlay: {
-    en: 'Drop Documents into LifeVault',
-    he: 'שחרר מסמכים לתוך LifeVault',
+    en: 'Drop Documents into Nayeret.AI',
+    he: 'שחרר מסמכים לתוך Nayeret.AI',
   },
   dropOverlayHint: {
     en: 'PDF, PNG, JPG, TIFF, BMP',
@@ -129,8 +134,13 @@ const translations = {
   colStatus:    { en: 'Status',     he: 'סטטוס' },
   tableDetails: { en: 'Details',    he: 'פרטים' },
   tableSummary: { en: 'Summary',    he: 'סיכום' },
-  deleteDoc:    { en: '🗑 Delete',  he: '🗑 מחק' },
-  deletingDoc:  { en: 'Deleting…', he: 'מוחק…' },
+  deleteDoc:        { en: '🗑 Delete',              he: '🗑 מחק' },
+  deletingDoc:      { en: 'Deleting…',              he: 'מוחק…' },
+  confirmDeleteTitle: { en: 'Delete document?',     he: 'מחיקת מסמך?' },
+  confirmDeleteBody:  { en: 'This cannot be undone.', he: 'פעולה זו אינה ניתנת לביטול.' },
+  confirmCancel:    { en: 'Cancel',                 he: 'ביטול' },
+  confirmDelete:    { en: 'Delete',                 he: 'מחק' },
+  deleteFailMsg:    { en: 'Failed to delete document.', he: 'מחיקת המסמך נכשלה.' },
 };
 import { useState, useEffect, useRef, createContext, useContext } from 'react';
 import { useRouter } from 'next/router';
@@ -199,18 +209,19 @@ function fmtMoney(n: number, symbol: string): string {
 
 // ─── Taxonomy config ──────────────────────────────────────────────────────────
 
-const TYPE_CONFIG: Record<string, { label: string; color: string }> = {
-  bill:             { label: 'Bill',             color: 'bg-blue-100 text-blue-800 border-blue-200' },
-  financial_report: { label: 'Financial Report', color: 'bg-green-100 text-green-800 border-green-200' },
-  receipt:          { label: 'Receipt',          color: 'bg-yellow-100 text-yellow-800 border-yellow-200' },
-  claim:            { label: 'Claim',            color: 'bg-rose-100 text-rose-800 border-rose-200' },
-  insurances:       { label: 'Insurance',        color: 'bg-purple-100 text-purple-800 border-purple-200' },
-  identification:   { label: 'ID / Passport',    color: 'bg-orange-100 text-orange-800 border-orange-200' },
-  other:            { label: 'Other',            color: 'bg-gray-100 text-gray-700 border-gray-200' },
+const TYPE_CONFIG: Record<string, { label: { en: string; he: string }; color: string; emoji: string }> = {
+  bill:             { label: { en: 'Bill',             he: 'חשבון'        }, color: 'bg-blue-100 text-blue-800 border-blue-200',    emoji: '🧾' },
+  financial_report: { label: { en: 'Financial Report', he: 'דוח פיננסי'   }, color: 'bg-green-100 text-green-800 border-green-200',  emoji: '📊' },
+  receipt:          { label: { en: 'Receipt',          he: 'קבלה'          }, color: 'bg-yellow-100 text-yellow-800 border-yellow-200', emoji: '🧾' },
+  claim:            { label: { en: 'Claim',            he: 'תביעה'         }, color: 'bg-rose-100 text-rose-800 border-rose-200',    emoji: '📋' },
+  insurance:        { label: { en: 'Insurance Policy', he: 'פוליסת ביטוח' }, color: 'bg-purple-100 text-purple-800 border-purple-200', emoji: '🛡' },
+  identification:   { label: { en: 'Identity',         he: 'זיהוי'         }, color: 'bg-orange-100 text-orange-800 border-orange-200', emoji: '🪪' },
+  other:            { label: { en: 'Other',            he: 'אחר'           }, color: 'bg-gray-100 text-gray-700 border-gray-200',    emoji: '📄' },
 };
 
-function typeConfig(type: string) {
-  return TYPE_CONFIG[type.toLowerCase()] ?? TYPE_CONFIG['other'];
+function typeConfig(type: string, lang: 'en' | 'he' = 'en') {
+  const cfg = TYPE_CONFIG[type.toLowerCase()] ?? TYPE_CONFIG['other'];
+  return { label: cfg.label[lang], color: cfg.color, emoji: cfg.emoji };
 }
 
 // ─── Date helpers ─────────────────────────────────────────────────────────────
@@ -244,7 +255,8 @@ const SENSITIVE_KEYS = new Set([
 // ─── Shared components ────────────────────────────────────────────────────────
 
 function TypeBadge({ type }: { type: string }) {
-  const { label, color } = typeConfig(type);
+  const { lang } = useSettings();
+  const { label, color } = typeConfig(type, lang);
   return (
     <span className={`shrink-0 text-xs font-semibold px-2 py-0.5 rounded-full border ${color}`}>
       {label}
@@ -543,7 +555,7 @@ function SettingsPanel({
 
         {/* Footer */}
         <div className="px-5 py-3 border-t border-gray-100 text-center">
-          <p className="text-xs text-gray-300">LifeVault v0.7 · Supabase Auth enabled</p>
+          <p className="text-xs text-gray-300">Nayeret.AI · Powered by Gemini + Supabase</p>
         </div>
       </div>
     </>
@@ -608,6 +620,7 @@ function readFileAsBase64(file: File): Promise<string> {
 }
 
 function BulkProgressBar({ queue }: { queue: UploadJob[] }) {
+  const { lang } = useSettings();
   const done   = queue.filter(j => j.status === 'done' || j.status === 'error').length;
   const errors = queue.filter(j => j.status === 'error').length;
   const total  = queue.length;
@@ -615,17 +628,17 @@ function BulkProgressBar({ queue }: { queue: UploadJob[] }) {
   const pct     = Math.round((done / total) * 100);
   const allDone = done === total;
 
+  const statusText = allDone
+    ? errors > 0
+      ? lang === 'he' ? `הסתיים — ${errors} שגיאות` : `Completed — ${errors} error${errors > 1 ? 's' : ''}`
+      : lang === 'he' ? `✓ ${total} מסמכים נותחו` : `✓ ${total} document${total > 1 ? 's' : ''} analyzed`
+    : lang === 'he' ? `מנתח ${done + 1} מתוך ${total}…` : `Analyzing ${done + 1} of ${total} document${total > 1 ? 's' : ''}…`;
+
   return (
     <div className="fixed bottom-0 left-0 right-0 z-50 bg-white border-t border-gray-200 shadow-lg px-6 py-3" dir="ltr">
       <div className="max-w-5xl mx-auto">
         <div className="flex items-center justify-between mb-1.5">
-          <span className="text-sm font-medium text-gray-700">
-            {allDone
-              ? errors > 0
-                ? `Completed — ${errors} error${errors > 1 ? 's' : ''}`
-                : `✓ ${total} document${total > 1 ? 's' : ''} analyzed`
-              : `Analyzing ${done + 1} of ${total} document${total > 1 ? 's' : ''}…`}
-          </span>
+          <span className="text-sm font-medium text-gray-700">{statusText}</span>
           <span className="text-xs text-gray-400 tabular-nums">{pct}%</span>
         </div>
         <div className="h-1.5 bg-gray-100 rounded-full overflow-hidden">
@@ -638,7 +651,7 @@ function BulkProgressBar({ queue }: { queue: UploadJob[] }) {
         </div>
         {allDone && errors > 0 && (
           <p className="text-xs text-red-500 mt-1">
-            Failed: {queue.filter(j => j.status === 'error').map(j => j.resolvedName).join(', ')}
+            {translations.progressFailed[lang]} {queue.filter(j => j.status === 'error').map(j => j.resolvedName).join(', ')}
           </p>
         )}
       </div>
@@ -775,30 +788,208 @@ async function renderImageThumbnail(file: File): Promise<string> {
 
 // ─── Vault Table ──────────────────────────────────────────────────────────────
 
-function ThumbnailCell({ doc }: { doc: VaultDoc }) {
-  const [imgError, setImgError] = useState(false);
-  if (doc.thumbnail_url && !imgError) {
-    return (
-      <img
-        src={doc.thumbnail_url}
-        alt=""
-        className="w-10 h-14 object-cover rounded border border-gray-200 flex-shrink-0"
-        onError={() => setImgError(true)}
-      />
-    );
-  }
-  const { color } = typeConfig(doc.document_type);
-  const icon =
-    doc.document_type === 'financial_report' ? '📊' :
-    doc.document_type === 'bill' ? '🧾' :
-    doc.document_type === 'receipt' ? '🧾' :
-    doc.document_type === 'claim' ? '📋' :
-    doc.document_type === 'insurances' ? '🛡' :
-    doc.document_type === 'identification' ? '🪪' : '📄';
+function DocumentModal({ doc, token, onClose }: { doc: VaultDoc; token: string; onClose: () => void }) {
+  const isPdf = doc.file_name.toLowerCase().endsWith('.pdf');
+  const fileUrl = `/api/file?id=${doc.id}&t=${encodeURIComponent(token)}`;
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, [onClose]);
   return (
-    <div className={`w-10 h-10 rounded border flex items-center justify-center text-base select-none flex-shrink-0 ${color}`}>
-      {icon}
+    <div className="fixed inset-0 z-[60] flex flex-col bg-black/90" onClick={onClose}>
+      <div
+        className="flex items-center justify-between px-5 py-3 bg-black/60 flex-shrink-0"
+        onClick={e => e.stopPropagation()}
+      >
+        <span className="text-sm font-medium text-white/80 truncate max-w-[80vw]">{doc.file_name}</span>
+        <button
+          onClick={onClose}
+          className="text-white/60 hover:text-white text-3xl leading-none ml-4"
+          aria-label="Close"
+        >×</button>
+      </div>
+      <div className="flex-1 overflow-auto flex items-start justify-center p-4" onClick={e => e.stopPropagation()}>
+        {isPdf ? (
+          <iframe
+            src={fileUrl}
+            title={doc.file_name}
+            className="w-full max-w-4xl rounded shadow-2xl border-0"
+            style={{ height: 'calc(100vh - 80px)' }}
+          />
+        ) : (
+          <img
+            src={fileUrl}
+            alt={doc.file_name}
+            className="max-h-[calc(100vh-80px)] max-w-full rounded shadow-2xl object-contain"
+          />
+        )}
+      </div>
     </div>
+  );
+}
+
+function ThumbnailCell({ doc, token }: { doc: VaultDoc; token: string }) {
+  const [imgError, setImgError] = useState(false);
+  const [hovered, setHovered] = useState(false);
+  const [showModal, setShowModal] = useState(false);
+  const [previewStyle, setPreviewStyle] = useState<React.CSSProperties>({});
+  const thumbRef = useRef<HTMLDivElement>(null);
+
+  const handleMouseEnter = () => {
+    if (doc.thumbnail_url && thumbRef.current) {
+      const rect = thumbRef.current.getBoundingClientRect();
+      const previewW = 250;
+      const leftPos = rect.right + 10;
+      const x = leftPos + previewW > window.innerWidth ? rect.left - previewW - 10 : leftPos;
+      const y = Math.min(rect.top, window.innerHeight - 350);
+      setPreviewStyle({ left: x, top: y, width: previewW });
+    }
+    setHovered(true);
+  };
+
+  const handleClick = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    setShowModal(true);
+  };
+
+  const { color, emoji } = typeConfig(doc.document_type);
+  const hasThumbnail = !!doc.thumbnail_url && !imgError;
+
+  return (
+    <>
+      {showModal && (
+        <DocumentModal doc={doc} token={token} onClose={() => setShowModal(false)} />
+      )}
+      <div
+        ref={thumbRef}
+        className="cursor-zoom-in flex-shrink-0"
+        onMouseEnter={handleMouseEnter}
+        onMouseLeave={() => setHovered(false)}
+        onClick={handleClick}
+        title={doc.file_name}
+      >
+        {hasThumbnail ? (
+          <img
+            src={doc.thumbnail_url!}
+            alt=""
+            className="w-10 h-14 object-cover rounded border border-gray-200 hover:border-indigo-300 transition-colors"
+            onError={() => setImgError(true)}
+          />
+        ) : (
+          <div className={`w-10 h-10 rounded border flex items-center justify-center text-base select-none ${color}`}>
+            {emoji}
+          </div>
+        )}
+      </div>
+      {hovered && hasThumbnail && (
+        <div
+          className="fixed z-50 rounded-xl overflow-hidden shadow-2xl border border-gray-200 pointer-events-none"
+          style={previewStyle}
+        >
+          <img src={doc.thumbnail_url!} alt="" className="w-full" />
+          <div className="bg-white/90 px-3 py-1.5 text-xs text-gray-500 truncate border-t border-gray-100">
+            {doc.file_name}
+          </div>
+        </div>
+      )}
+    </>
+  );
+}
+
+function ConfirmDialog({
+  filename, onConfirm, onCancel,
+}: {
+  filename: string;
+  onConfirm: () => void;
+  onCancel: () => void;
+}) {
+  const { lang } = useSettings();
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm" onClick={onCancel}>
+      <div
+        className="bg-white rounded-2xl shadow-2xl p-6 max-w-sm w-full mx-4"
+        dir={lang === 'he' ? 'rtl' : 'ltr'}
+        onClick={e => e.stopPropagation()}
+      >
+        <h3 className="text-base font-semibold text-gray-900 mb-1">
+          {translations.confirmDeleteTitle[lang]}
+        </h3>
+        <p className="text-sm text-gray-500 mb-1 truncate" title={filename}>"{filename}"</p>
+        <p className="text-sm text-red-500 mb-5">{translations.confirmDeleteBody[lang]}</p>
+        <div className="flex gap-3 justify-end">
+          <button
+            onClick={onCancel}
+            className="px-4 py-2 text-sm rounded-lg border border-gray-200 text-gray-600 hover:bg-gray-50 transition-colors"
+          >
+            {translations.confirmCancel[lang]}
+          </button>
+          <button
+            onClick={onConfirm}
+            className="px-4 py-2 text-sm rounded-lg bg-red-500 hover:bg-red-600 text-white font-medium transition-colors"
+          >
+            {translations.confirmDelete[lang]}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ErrorToast({ message, onDismiss }: { message: string; onDismiss: () => void }) {
+  useEffect(() => {
+    const t = setTimeout(onDismiss, 4000);
+    return () => clearTimeout(t);
+  }, [onDismiss]);
+  return (
+    <div className="fixed bottom-6 right-6 z-50 flex items-center gap-3 bg-red-50 border border-red-200 text-red-700 text-sm rounded-xl px-4 py-3 shadow-lg animate-fade-in">
+      <span>⚠️ {message}</span>
+      <button onClick={onDismiss} className="text-red-400 hover:text-red-600 font-bold leading-none">×</button>
+    </div>
+  );
+}
+
+function getValidationStatus(doc: VaultDoc): 'verified' | 'unsure' | 'missing' {
+  const ra = doc.raw_analysis ?? {};
+  if (ra.is_media) return 'unsure';
+  if (!doc.summary_he && !doc.summary_en) return 'missing';
+  switch (doc.document_type) {
+    case 'bill':
+      if (!ra.total_amount && !ra.provider) return 'missing';
+      if (!ra.due_date) return 'unsure';
+      break;
+    case 'financial_report':
+      if (!ra.total_balance) return 'unsure';
+      break;
+    case 'receipt':
+      if (!ra.total_amount && !ra.merchant) return 'missing';
+      break;
+    case 'claim':
+      if (!ra.total_amount && !ra.insurer) return 'missing';
+      break;
+    case 'insurance':
+      if (!ra.insurer && !ra.policy_number) return 'missing';
+      break;
+    case 'identification':
+      if (!ra.id_number && !ra.full_name) return 'missing';
+      break;
+  }
+  return 'verified';
+}
+
+function ValidationDot({ doc }: { doc: VaultDoc }) {
+  const { lang } = useSettings();
+  const status = getValidationStatus(doc);
+  const cfg = {
+    verified: { cls: 'bg-green-500', tip: lang === 'he' ? 'מאומת'    : 'Verified' },
+    unsure:   { cls: 'bg-amber-400', tip: lang === 'he' ? 'לא בטוח'  : 'AI Unsure' },
+    missing:  { cls: 'bg-red-500',   tip: lang === 'he' ? 'חסר מידע' : 'Missing Data' },
+  }[status];
+  return (
+    <span
+      className={`inline-block w-2 h-2 rounded-full flex-shrink-0 ${cfg.cls}`}
+      title={cfg.tip}
+    />
   );
 }
 
@@ -814,6 +1005,8 @@ function VaultRow({
 }) {
   const { lang, alertDays, currency, privacyMode } = useSettings();
   const [deleting, setDeleting] = useState(false);
+  const [showConfirm, setShowConfirm] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
 
   const ra = doc.raw_analysis ?? {};
   const dueAlert = doc.document_type === 'bill' ? getDueAlert(ra.due_date, alertDays) : null;
@@ -851,9 +1044,13 @@ function VaultRow({
     ? 'bg-indigo-50'
     : 'bg-white hover:bg-gray-50';
 
-  const handleDelete = async (e: React.MouseEvent) => {
+  const handleDeleteClick = (e: React.MouseEvent) => {
     e.stopPropagation();
-    if (!confirm(`Delete "${doc.file_name}"? This cannot be undone.`)) return;
+    setShowConfirm(true);
+  };
+
+  const confirmDelete = async () => {
+    setShowConfirm(false);
     setDeleting(true);
     const res = await fetch('/api/documents', {
       method: 'DELETE',
@@ -863,16 +1060,26 @@ function VaultRow({
     if (res.ok) {
       onDelete(doc.id);
     } else {
-      alert('Failed to delete document.');
+      setDeleteError(translations.deleteFailMsg[lang]);
       setDeleting(false);
     }
   };
 
   return (
     <>
-      <tr className={`cursor-pointer transition-colors ${rowBg}`} onClick={onToggle}>
+      {showConfirm && (
+        <ConfirmDialog
+          filename={doc.file_name}
+          onConfirm={confirmDelete}
+          onCancel={() => setShowConfirm(false)}
+        />
+      )}
+      {deleteError && (
+        <ErrorToast message={deleteError} onDismiss={() => setDeleteError(null)} />
+      )}
+      <tr className={`cursor-pointer transition-colors border-b border-gray-100 ${rowBg}`} onClick={onToggle}>
         <td className="py-2 px-3 w-12">
-          <ThumbnailCell doc={doc} />
+          <ThumbnailCell doc={doc} token={token} />
         </td>
         <td className="py-2 px-3">
           <p className="text-sm font-medium text-gray-800 truncate max-w-[180px]" title={doc.file_name}>
@@ -883,13 +1090,16 @@ function VaultRow({
           </p>
         </td>
         <td className="py-2 px-3">
-          <TypeBadge type={doc.document_type} />
+          <div className="flex items-center gap-1.5">
+            <TypeBadge type={doc.document_type} />
+            <ValidationDot doc={doc} />
+          </div>
         </td>
-        <td className="py-2 px-3 text-sm text-right hidden sm:table-cell tabular-nums">
+        <td className="py-2 px-3 text-sm text-end hidden sm:table-cell">
           {amount ? (
             privacyMode
               ? <PrivateValue value={amount} />
-              : <span className="text-gray-700">{amount}</span>
+              : <span className="font-mono text-gray-700 tabular-nums">{amount}</span>
           ) : <span className="text-gray-300">—</span>}
         </td>
         <td className="py-2 px-3 text-xs text-right hidden sm:table-cell text-gray-500">
@@ -950,7 +1160,7 @@ function VaultRow({
               )}
               <div className="flex justify-end pt-1">
                 <button
-                  onClick={handleDelete}
+                  onClick={handleDeleteClick}
                   disabled={deleting}
                   className="text-xs text-red-500 hover:text-red-700 border border-red-200 rounded px-3 py-1 transition-colors disabled:opacity-50"
                 >
@@ -1252,6 +1462,7 @@ export default function Dashboard() {
 
   return (
     <SettingsContext.Provider value={ctx}>
+      <Head><title>Nayeret.AI</title></Head>
       <div {...getRootProps()} className="min-h-screen bg-gray-50" dir={lang === 'he' ? 'rtl' : 'ltr'}>
 
         {/* Drag-over overlay */}
@@ -1277,7 +1488,9 @@ export default function Dashboard() {
         {/* Top bar */}
         <header className="bg-white border-b border-gray-200 px-6 py-4 flex items-center justify-between gap-4">
           <div>
-            <h1 className="text-xl font-bold text-gray-900 tracking-tight">LifeVault</h1>
+            <h1 className="text-xl font-bold tracking-tight">
+              <span className="text-gray-900">Nayeret</span><span className="text-indigo-600">.AI</span>
+            </h1>
             <p className="text-xs text-gray-400">
               {lang === 'he' ? 'מנהל מסמכים חכם' : 'AI-powered document manager'}
             </p>

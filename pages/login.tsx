@@ -1,3 +1,4 @@
+import Head from 'next/head';
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/router';
 import { supabase } from '@/supabase/browser';
@@ -39,14 +40,18 @@ export default function LoginPage() {
   };
 
   return (
+    <>
+    <Head><title>Nayeret.AI</title></Head>
     <div className="min-h-screen bg-gradient-to-br from-indigo-50 via-white to-gray-50 flex items-center justify-center px-4">
       <div className="w-full max-w-sm">
         {/* Logo / Brand */}
         <div className="text-center mb-8">
           <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-indigo-600 text-white text-3xl mb-4 shadow-lg">
-            🗄️
+            ✦
           </div>
-          <h1 className="text-2xl font-bold text-gray-900 tracking-tight">LifeVault</h1>
+          <h1 className="text-2xl font-bold tracking-tight">
+            <span className="text-gray-900">Nayeret</span><span className="text-indigo-600">.AI</span>
+          </h1>
           <p className="text-sm text-gray-500 mt-1">AI-powered document manager</p>
         </div>
 
@@ -88,8 +93,9 @@ export default function LoginPage() {
           </p>
         </div>
 
-        <p className="text-center text-xs text-gray-300 mt-6">LifeVault · Built with Next.js + Supabase</p>
+        <p className="text-center text-xs text-gray-300 mt-6">Nayeret.AI · Built with Next.js + Supabase</p>
       </div>
     </div>
+    </>
   );
 }
