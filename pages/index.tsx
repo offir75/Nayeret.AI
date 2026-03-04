@@ -133,7 +133,9 @@ const translations = {
   colDueDate:   { en: 'Due Date',   he: 'תאריך פירעון' },
   colStatus:    { en: 'Status',     he: 'סטטוס' },
   tableDetails: { en: 'Details',    he: 'פרטים' },
-  tableSummary: { en: 'Summary',    he: 'סיכום' },
+  tableSummary:     { en: 'Summary',           he: 'סיכום'        },
+  mediaDescription: { en: 'Media Description', he: 'תיאור מדיה'   },
+  mediaNote:        { en: 'This file was identified as non-document media.', he: 'קובץ זה זוהה כמדיה שאינה מסמך.' },
   deleteDoc:        { en: '🗑 Delete',              he: '🗑 מחק' },
   deletingDoc:      { en: 'Deleting…',              he: 'מוחק…' },
   confirmDeleteTitle: { en: 'Delete document?',     he: 'מחיקת מסמך?' },
@@ -1118,45 +1120,59 @@ function VaultRow({
         <tr className="bg-gray-50 border-t border-gray-200">
           <td colSpan={6} className="px-5 py-4">
             <div className="flex flex-col gap-3" dir={lang === 'he' ? 'rtl' : 'ltr'}>
-              {summary && (
+              {ra.is_media ? (
                 <div>
                   <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-1">
-                    {translations.tableSummary[lang]}
+                    {translations.mediaDescription[lang]}
                   </p>
-                  <p className="text-sm text-gray-700 leading-relaxed">{summary}</p>
+                  <p className="text-sm text-gray-500 italic mb-1">{translations.mediaNote[lang]}</p>
+                  {doc.summary_en && (
+                    <p className="text-sm text-gray-700 leading-relaxed">{doc.summary_en}</p>
+                  )}
                 </div>
-              )}
-              {metaEntries.length > 0 && (
-                <div>
-                  <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-1">
-                    {translations.tableDetails[lang]}
-                  </p>
-                  <table className="w-full text-xs" dir="ltr">
-                    <tbody>
-                      {metaEntries.map(([key, value]) => {
-                        const rawStr = String(value);
-                        const isMoney = SENSITIVE_KEYS.has(key) && !isNaN(Number(value));
-                        let displayStr = rawStr;
-                        if (isMoney) {
-                          displayStr = fmtMoney(
-                            convertAmount(Number(value), String(ra.currency ?? 'ILS'), currency),
-                            symbol,
-                          );
-                        }
-                        return (
-                          <tr key={key} className="border-t border-gray-100">
-                            <td className="py-1 pr-3 text-gray-500 font-medium capitalize w-2/5">
-                              {key.replace(/_/g, ' ')}
-                            </td>
-                            <td className="py-1 text-gray-800">
-                              {SENSITIVE_KEYS.has(key) ? <PrivateValue value={displayStr} /> : displayStr}
-                            </td>
-                          </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
-                </div>
+              ) : (
+                <>
+                  {summary && (
+                    <div>
+                      <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-1">
+                        {translations.tableSummary[lang]}
+                      </p>
+                      <p className="text-sm text-gray-700 leading-relaxed">{summary}</p>
+                    </div>
+                  )}
+                  {metaEntries.length > 0 && (
+                    <div>
+                      <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-1">
+                        {translations.tableDetails[lang]}
+                      </p>
+                      <table className="w-full text-xs" dir="ltr">
+                        <tbody>
+                          {metaEntries.map(([key, value]) => {
+                            const rawStr = String(value);
+                            const isMoney = SENSITIVE_KEYS.has(key) && !isNaN(Number(value));
+                            let displayStr = rawStr;
+                            if (isMoney) {
+                              displayStr = fmtMoney(
+                                convertAmount(Number(value), String(ra.currency ?? 'ILS'), currency),
+                                symbol,
+                              );
+                            }
+                            return (
+                              <tr key={key} className="border-t border-gray-100">
+                                <td className="py-1 pr-3 text-gray-500 font-medium capitalize w-2/5">
+                                  {key.replace(/_/g, ' ')}
+                                </td>
+                                <td className="py-1 text-gray-800">
+                                  {SENSITIVE_KEYS.has(key) ? <PrivateValue value={displayStr} /> : displayStr}
+                                </td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </>
               )}
               <div className="flex justify-end pt-1">
                 <button
