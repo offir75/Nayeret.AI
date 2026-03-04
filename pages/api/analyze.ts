@@ -137,21 +137,33 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       `Answer ONLY "yes" or "no".\n\nText:\n${text.slice(0, 2000)}`
     );
     if (!triageResult.toLowerCase().startsWith('y')) {
-      const oneliner = await callGemini(
-        `In one sentence (in English), describe what this content appears to be.\n\nText:\n${text.slice(0, 1000)}`
+      const onelinerRaw = await callGemini(
+        `In one sentence, describe what this content appears to be.\n` +
+        `Return a JSON object with exactly two keys:\n` +
+        `  "he": the description in Hebrew\n` +
+        `  "en": the description in English\n` +
+        `Return only the JSON object, no other text.\n\nText:\n${text.slice(0, 1000)}`,
+        true
       );
+      let mediaSummaries: { he: string; en: string };
+      try {
+        mediaSummaries = JSON.parse(onelinerRaw);
+        if (!mediaSummaries.he || !mediaSummaries.en) throw new Error('Missing keys');
+      } catch {
+        mediaSummaries = { he: '', en: onelinerRaw };
+      }
       const { data: mediaData } = await supabaseAdmin
         .from('documents')
         .upsert([{
           file_name: filename, owner_id: userId,
           document_type: 'other',
-          summary_he: '', summary_en: oneliner,
+          summary_he: mediaSummaries.he, summary_en: mediaSummaries.en,
           raw_analysis: { is_media: true },
         }], { onConflict: 'file_name,owner_id' })
         .select();
       return res.status(200).json({
         success: true, filename,
-        summary_he: '', summary_en: oneliner,
+        summary_he: mediaSummaries.he, summary_en: mediaSummaries.en,
         document_group: 'Other', document_type: 'other',
         raw_metadata: { is_media: true },
         supabaseId: mediaData?.[0]?.id ?? null,

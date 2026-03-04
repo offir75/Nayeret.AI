@@ -1126,8 +1126,10 @@ function VaultRow({
                     {translations.mediaDescription[lang]}
                   </p>
                   <p className="text-sm text-gray-500 italic mb-1">{translations.mediaNote[lang]}</p>
-                  {doc.summary_en && (
-                    <p className="text-sm text-gray-700 leading-relaxed">{doc.summary_en}</p>
+                  {(doc.summary_he || doc.summary_en) && (
+                    <p className="text-sm text-gray-700 leading-relaxed">
+                      {lang === 'he' ? (doc.summary_he || doc.summary_en) : (doc.summary_en || doc.summary_he)}
+                    </p>
                   )}
                 </div>
               ) : (
