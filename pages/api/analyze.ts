@@ -64,7 +64,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   }
 
   try {
-    const { filename } = req.body;
+    const { filename, mimeType: clientMimeType } = req.body;
     if (!filename) {
       return res.status(400).json({ error: 'Missing filename' });
     }
@@ -85,8 +85,11 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     // 2. Extract text — Gemini OCR for images, pdf-parse for PDFs
     let text: string;
     const ext = getExt(filename);
-    if (IMAGE_EXTENSIONS.has(ext)) {
-      const mimeType = MIME_MAP[ext] ?? 'image/jpeg';
+    // Prefer the MIME type reported by the browser (handles iOS HEIC→JPEG conversion
+    // where the filename keeps .heic but the content is actually JPEG)
+    const isImage = IMAGE_EXTENSIONS.has(ext) || (clientMimeType && clientMimeType.startsWith('image/'));
+    if (isImage) {
+      const mimeType = (clientMimeType && clientMimeType.startsWith('image/')) ? clientMimeType : (MIME_MAP[ext] ?? 'image/jpeg');
       try {
         const ocrResult = await model.generateContent([
           { inlineData: { data: fileBuffer.toString('base64'), mimeType } },

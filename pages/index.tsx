@@ -1113,7 +1113,7 @@ export default function Dashboard() {
         const analyzeRes = await fetch('/api/analyze', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-          body: JSON.stringify({ filename: job.resolvedName }),
+          body: JSON.stringify({ filename: job.resolvedName, mimeType: job.originalFile.type }),
         });
         const d = await analyzeRes.json();
         if (!analyzeRes.ok || !d.success) throw new Error(d.error ?? 'Analysis failed');
