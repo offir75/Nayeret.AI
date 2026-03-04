@@ -6,10 +6,11 @@ import { supabaseAdmin } from '@/supabase/client';
 // Use lib directly to bypass index.js debug code that breaks under webpack/Next.js
 const pdfParse = require('pdf-parse/lib/pdf-parse.js');
 
-const IMAGE_EXTENSIONS = new Set(['png', 'jpg', 'jpeg', 'tiff', 'bmp']);
+const IMAGE_EXTENSIONS = new Set(['png', 'jpg', 'jpeg', 'tiff', 'bmp', 'heic', 'heif']);
 const MIME_MAP: Record<string, string> = {
   png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg',
   tiff: 'image/tiff', bmp: 'image/bmp',
+  heic: 'image/heic', heif: 'image/heif',
 };
 function getExt(filename: string): string {
   return filename.split('.').pop()?.toLowerCase() ?? '';

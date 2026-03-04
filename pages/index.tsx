@@ -385,7 +385,7 @@ function EmptyState({ isSearch }: { isSearch: boolean }) {
 
 // ─── Supported file types ─────────────────────────────────────────────────────
 
-const SUPPORTED_EXTENSIONS = ['.pdf', '.png', '.jpg', '.jpeg', '.tiff', '.bmp'];
+const SUPPORTED_EXTENSIONS = ['.pdf', '.png', '.jpg', '.jpeg', '.tiff', '.bmp', '.heic', '.heif'];
 function isSupportedFile(name: string): boolean {
   return SUPPORTED_EXTENSIONS.some(ext => name.toLowerCase().endsWith(ext));
 }
@@ -476,7 +476,8 @@ function IngestionHub({ onFiles, disabled }: { onFiles: (files: File[]) => void;
     return () => document.removeEventListener('mousedown', handler);
   }, [open]);
 
-  const accepted = SUPPORTED_EXTENSIONS.join(',');
+  // Use "image/*" so iOS Safari shows the photo library and auto-converts HEIC→JPEG
+  const accepted = 'image/*,.pdf,.heic,.heif';
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(e.target.files ?? []);
@@ -1159,7 +1160,7 @@ export default function Dashboard() {
 
   const { getRootProps, isDragActive } = useDropzone({
     onDrop: handleFiles,
-    accept: { 'application/pdf': ['.pdf'], 'image/png': ['.png'], 'image/jpeg': ['.jpg', '.jpeg'], 'image/tiff': ['.tiff'], 'image/bmp': ['.bmp'] },
+    accept: { 'application/pdf': ['.pdf'], 'image/*': ['.png', '.jpg', '.jpeg', '.tiff', '.bmp', '.heic', '.heif'] },
     noClick: true,
     noKeyboard: true,
   });

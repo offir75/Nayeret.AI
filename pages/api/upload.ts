@@ -16,6 +16,8 @@ const MIME_MAP: Record<string, string> = {
   jpeg: 'image/jpeg',
   tiff: 'image/tiff',
   bmp:  'image/bmp',
+  heic: 'image/heic',
+  heif: 'image/heif',
 };
 
 async function getUserId(req: NextApiRequest): Promise<string | null> {
