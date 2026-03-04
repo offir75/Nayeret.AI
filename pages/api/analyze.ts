@@ -1,6 +1,4 @@
 import { NextApiRequest, NextApiResponse } from 'next';
-import { readFile } from 'fs/promises';
-import { join } from 'path';
 import { GoogleGenerativeAI } from '@google/generative-ai';
 import { supabaseAdmin } from '@/supabase/client';
 
@@ -70,15 +68,15 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       return res.status(400).json({ error: 'Missing filename' });
     }
 
-    // 1. Read file from disk
-    const filepath = join(process.cwd(), 'uploads', filename);
-    let fileBuffer: Buffer;
-    try {
-      fileBuffer = await readFile(filepath);
-    } catch (err) {
-      console.error('Failed to read file:', filepath, err);
-      return res.status(422).json({ error: 'Could not read file', details: String(err) });
+    // 1. Download file from Supabase Storage
+    const storagePath = `${userId}/${filename}`;
+    const { data: storageData, error: storageError } = await supabaseAdmin.storage
+      .from('documents')
+      .download(storagePath);
+    if (storageError || !storageData) {
+      return res.status(422).json({ error: 'Could not read file from storage', details: String(storageError) });
     }
+    const fileBuffer = Buffer.from(await storageData.arrayBuffer());
     if (!fileBuffer?.length) {
       return res.status(422).json({ error: 'File buffer is empty' });
     }

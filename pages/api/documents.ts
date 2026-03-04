@@ -1,7 +1,4 @@
 import { NextApiRequest, NextApiResponse } from 'next';
-import { unlink } from 'fs/promises';
-import { join } from 'path';
-import { existsSync } from 'fs';
 import { supabaseAdmin } from '@/supabase/client';
 
 /** Extract and validate the caller's user ID from the Authorization header. */
@@ -64,11 +61,11 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       return res.status(500).json({ error: 'Failed to delete document', details: deleteError.message });
     }
 
-    // Remove the file from uploads/ (best-effort, don't fail if missing)
-    const filePath = join(process.cwd(), 'uploads', doc.file_name);
-    if (existsSync(filePath)) {
-      await unlink(filePath).catch(() => null);
-    }
+    // Remove the file from Supabase Storage (best-effort, don't fail if missing)
+    await supabaseAdmin.storage
+      .from('documents')
+      .remove([`${doc.owner_id}/${doc.file_name}`])
+      .catch(() => null);
 
     // Remove thumbnail from Supabase Storage (best-effort)
     await supabaseAdmin.storage

@@ -1104,7 +1104,7 @@ export default function Dashboard() {
 
         const uploadRes = await fetch('/api/upload', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
           body: JSON.stringify({ file: base64, filename: job.resolvedName }),
         });
         if (!uploadRes.ok) throw new Error((await uploadRes.json()).error ?? 'Upload failed');
