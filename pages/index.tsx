@@ -1,5 +1,5 @@
 import Head from 'next/head';
-import { Settings, ChevronDown, ChevronUp, Plus, TrendingUp, Receipt, FileText, Trash2, Search } from 'lucide-react';
+import { Settings, ChevronDown, ChevronUp, Plus, TrendingUp, Receipt, FileText, Trash2, Search, X } from 'lucide-react';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -29,7 +29,9 @@ const translations = {
   potentialClaim: { en: 'Potential Claim', he: 'תביעה פוטנציאלית' },
   analyzing:      { en: 'Analyzing…',      he: 'מנתח…'            },
   progressFailed: { en: 'Failed:',         he: 'נכשל:'            },
-  addDocuments: { en: '+ Add Documents', he: '+ הוסף מסמכים' },
+  addDocuments: { en: 'Add Documents', he: 'הוסף מסמכים' },
+  viewerLoading: { en: 'Please wait while loading…', he: 'אנא המתן בזמן הטעינה…' },
+  closeViewer:   { en: 'Close',                       he: 'סגור'                  },
   selectFiles:  { en: 'Select Files',    he: 'בחר קבצים'      },
   selectFolder: { en: 'Select Folder',   he: 'בחר תיקייה'     },
   totalAssets:     { en: 'Total Assets',   he: 'סה"כ נכסים'     },
@@ -618,24 +620,57 @@ async function renderImageThumbnail(file: File): Promise<string> {
 // ─── Document Modal ───────────────────────────────────────────────────────────
 
 function DocumentModal({ doc, token, onClose }: { doc: VaultDoc; token: string; onClose: () => void }) {
+  const { lang } = useSettings();
   const isPdf = doc.file_name.toLowerCase().endsWith('.pdf');
   const fileUrl = `/api/file?id=${doc.id}&t=${encodeURIComponent(token)}`;
+  const [loaded, setLoaded] = useState(false);
+
   useEffect(() => {
     const handler = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
   }, [onClose]);
+
   return (
     <div className="fixed inset-0 z-[60] flex flex-col bg-zen-stone/90" onClick={onClose}>
+      {/* Header */}
       <div className="flex items-center justify-between px-5 py-3 bg-zen-stone/60 flex-shrink-0" onClick={e => e.stopPropagation()}>
-        <span className="text-sm font-medium text-white/80 truncate max-w-[80vw]">{doc.file_name}</span>
-        <button onClick={onClose} className="text-white/60 hover:text-white text-3xl leading-none ml-4" aria-label="Close">×</button>
+        <span className="text-sm font-medium text-white/80 truncate min-w-0 mr-3">{doc.file_name}</span>
+        <button
+          onClick={onClose}
+          className="flex items-center justify-center w-10 h-10 rounded-full bg-white/10 hover:bg-white/25 active:bg-white/35 text-white transition-colors flex-shrink-0"
+          aria-label={translations.closeViewer[lang]}
+        >
+          <X className="w-5 h-5" />
+        </button>
       </div>
-      <div className="flex-1 overflow-auto flex items-start justify-center p-4" onClick={e => e.stopPropagation()}>
+
+      {/* Content area */}
+      <div className="flex-1 overflow-auto flex items-center justify-center p-4 relative" onClick={e => e.stopPropagation()}>
+        {/* Loading overlay */}
+        {!loaded && (
+          <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 pointer-events-none">
+            <div className="w-10 h-10 border-4 border-white/20 border-t-white rounded-full animate-spin" />
+            <p className="text-sm text-white/70">{translations.viewerLoading[lang]}</p>
+          </div>
+        )}
+
         {isPdf ? (
-          <iframe src={fileUrl} title={doc.file_name} className="w-full max-w-4xl rounded-lg shadow-2xl border-0" style={{ height: 'calc(100vh - 80px)' }} />
+          <iframe
+            src={fileUrl}
+            title={doc.file_name}
+            className={`w-full max-w-4xl rounded-lg shadow-2xl border-0 transition-opacity duration-300 ${loaded ? 'opacity-100' : 'opacity-0'}`}
+            style={{ height: 'calc(100vh - 80px)' }}
+            onLoad={() => setLoaded(true)}
+          />
         ) : (
-          <img src={fileUrl} alt={doc.file_name} className="max-h-[calc(100vh-80px)] max-w-full rounded-lg shadow-2xl object-contain" />
+          <img
+            src={fileUrl}
+            alt={doc.file_name}
+            className={`max-h-[calc(100vh-80px)] max-w-full rounded-lg shadow-2xl object-contain transition-opacity duration-300 ${loaded ? 'opacity-100' : 'opacity-0'}`}
+            onLoad={() => setLoaded(true)}
+            onError={() => setLoaded(true)}
+          />
         )}
       </div>
     </div>
@@ -903,13 +938,13 @@ function VaultRow({
         <TableRow className="border-b border-border/50">
           <TableCell colSpan={6} className="p-0">
             <div className="bg-secondary/30 border-t border-border/30">
-              <div className="p-6 max-w-3xl ms-0 me-auto" dir={lang === 'he' ? 'rtl' : 'ltr'}>
+              <div className="p-6 max-w-3xl ms-0 me-auto w-full overflow-hidden" dir={lang === 'he' ? 'rtl' : 'ltr'}>
                 {ra.is_media ? (
                   <div className="mb-5 text-start">
                     <h4 className="text-xs font-medium text-muted-foreground mb-2">{translations.mediaDescription[lang]}</h4>
                     <p className="text-sm text-muted-foreground italic mb-1">{translations.mediaNote[lang]}</p>
                     {(doc.summary_he || doc.summary_en) && (
-                      <p className="text-sm text-foreground leading-relaxed">
+                      <p className="text-sm text-foreground leading-relaxed break-words">
                         {lang === 'he' ? (doc.summary_he || doc.summary_en) : (doc.summary_en || doc.summary_he)}
                       </p>
                     )}
@@ -919,7 +954,7 @@ function VaultRow({
                     {summary && (
                       <div className="mb-5 text-start">
                         <h4 className="text-xs font-medium text-muted-foreground mb-2">{translations.tableSummary[lang]}</h4>
-                        <p className="text-sm text-foreground leading-relaxed">{summary}</p>
+                        <p className="text-sm text-foreground leading-relaxed break-words">{summary}</p>
                       </div>
                     )}
                     {metaEntries.length > 0 && (
@@ -934,9 +969,9 @@ function VaultRow({
                               displayStr = fmtMoney(convertAmount(Number(value), String(ra.currency ?? 'ILS'), currency), symbol);
                             }
                             return (
-                              <div key={key} className="bg-card rounded-lg border border-border/50 p-3 text-start">
-                                <p className="text-[10px] text-muted-foreground tracking-wide mb-1">{key.replace(/_/g, ' ')}</p>
-                                <p className="text-sm font-medium text-foreground">
+                              <div key={key} className="bg-card rounded-lg border border-border/50 p-3 text-start min-w-0">
+                                <p className="text-[10px] text-muted-foreground tracking-wide mb-1 break-words">{key.replace(/_/g, ' ')}</p>
+                                <p className="text-sm font-medium text-foreground break-words">
                                   {SENSITIVE_KEYS.has(key) ? <PrivateValue value={displayStr} /> : displayStr}
                                 </p>
                               </div>
