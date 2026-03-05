@@ -53,6 +53,23 @@ export async function analyzeFileApi(filename: string, mimeType: string, accessT
   return data;
 }
 
+export async function updateDocument(
+  id: string,
+  patch: { user_notes?: string; document_type?: string; raw_analysis?: Record<string, unknown> },
+  accessToken: string,
+): Promise<import('@/lib/types').VaultDoc> {
+  const res = await apiFetch('/api/documents', {
+    method: 'PATCH',
+    body: JSON.stringify({ id, ...patch }),
+  }, accessToken);
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({})) as { error?: string };
+    throw new Error(err.error ?? 'Update failed');
+  }
+  const data = await res.json() as { document: import('@/lib/types').VaultDoc };
+  return data.document;
+}
+
 export async function saveThumbnailApi(documentId: string, thumbnailBase64: string, accessToken: string): Promise<string> {
   const res = await apiFetch('/api/thumbnail', {
     method: 'POST',

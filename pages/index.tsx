@@ -248,7 +248,7 @@ function sortDocs(docs: VaultDoc[], col: SortCol, dir: 'asc' | 'desc'): VaultDoc
 
 // ─── VaultTable ───────────────────────────────────────────────────────────────
 
-function VaultTable({ docs, token, onDelete }: { docs: VaultDoc[]; token: string; onDelete: (id: string) => void }) {
+function VaultTable({ docs, token, onDelete, onUpdate }: { docs: VaultDoc[]; token: string; onDelete: (id: string) => void; onUpdate: (updated: VaultDoc) => void }) {
   const { lang } = useSettings();
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [sortCol, setSortCol] = useState<SortCol>('uploaded');
@@ -308,6 +308,7 @@ function VaultTable({ docs, token, onDelete }: { docs: VaultDoc[]; token: string
               doc={doc}
               token={token}
               onDelete={onDelete}
+              onUpdate={onUpdate}
               expanded={expandedId === doc.id}
               onToggle={() => toggle(doc.id)}
               hasInsurance={hasInsurance}
@@ -449,6 +450,7 @@ export default function Dashboard() {
           raw_analysis: d.raw_metadata ?? null,
           thumbnail_url: null,
           created_at: new Date().toISOString(),
+          user_notes: null,
         };
         setDocs(prev => [newDoc, ...prev.filter(p => p.id !== supabaseId)]);
         setUploadQueue(prev => prev.map(j => j.id === job.id ? { ...j, status: 'done' } : j));
@@ -483,12 +485,17 @@ export default function Dashboard() {
 
   const isUploading = uploadQueue.some(j => j.status === 'queued' || j.status === 'analyzing');
   const handleDelete = (id: string) => setDocs(prev => prev.filter(d => d.id !== id));
+  const handleUpdate = (updated: VaultDoc) => setDocs(prev => prev.map(d => d.id === updated.id ? updated : d));
 
   const q = search.toLowerCase();
   const filtered = useMemo(() => docs.filter(d =>
     d.file_name.toLowerCase().includes(q) ||
     d.document_type.toLowerCase().includes(q) ||
-    String(d.raw_analysis?.provider ?? '').toLowerCase().includes(q)
+    String(d.raw_analysis?.provider ?? '').toLowerCase().includes(q) ||
+    String(d.raw_analysis?.merchant ?? '').toLowerCase().includes(q) ||
+    String(d.raw_analysis?.insurer ?? '').toLowerCase().includes(q) ||
+    String(d.raw_analysis?.institution ?? '').toLowerCase().includes(q) ||
+    (d.user_notes ?? '').toLowerCase().includes(q)
   ), [docs, q]);
 
   // ── Auth loading gate ──────────────────────────────────────────────────────
@@ -584,7 +591,7 @@ export default function Dashboard() {
               <p className="text-sm text-muted-foreground">{lang === 'he' ? 'טוען כספת…' : 'Loading vault…'}</p>
             </div>
           ) : filtered.length > 0 ? (
-            <VaultTable docs={filtered} token={session?.access_token ?? ''} onDelete={handleDelete} />
+            <VaultTable docs={filtered} token={session?.access_token ?? ''} onDelete={handleDelete} onUpdate={handleUpdate} />
           ) : (
             <EmptyState isSearch={search.length > 0} />
           )}

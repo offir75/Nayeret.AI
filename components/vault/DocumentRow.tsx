@@ -1,5 +1,5 @@
-import React, { useState, useEffect } from 'react';
-import { Trash2, FileText } from 'lucide-react';
+import React, { useState, useEffect, useMemo } from 'react';
+import { Trash2, FileText, Check, AlertCircle, Save } from 'lucide-react';
 import { TableRow, TableCell } from '@/components/ui/table';
 import { Button } from '@/components/ui/button';
 import { HoverCard, HoverCardContent, HoverCardTrigger } from '@/components/ui/hover-card';
@@ -8,7 +8,8 @@ import { useSettings } from '@/lib/context/settings';
 import type { VaultDoc } from '@/lib/types';
 import { getDueAlert, isLiquid, convertAmount, fmtMoney, SENSITIVE_KEYS } from '@/lib/vault/helpers';
 import { translations } from '@/lib/vault/translations';
-import { deleteDocument } from '@/lib/services/documents';
+import { deleteDocument, updateDocument } from '@/lib/services/documents';
+import { EDITABLE_FIELDS, FIELD_META, initDrafts } from '@/lib/vault/fieldMeta';
 import CategoryBadge, { typeConfig } from './CategoryBadge';
 import ConfirmDialog from './ConfirmDialog';
 import DocumentModal from './DocumentModal';
@@ -63,18 +64,27 @@ function ValidationDot({ doc }: { doc: VaultDoc }) {
 }
 
 export const DocumentRow = React.memo(function DocumentRow({
-  doc, token, onDelete, expanded, onToggle, hasInsurance,
+  doc, token, onDelete, onUpdate, expanded, onToggle, hasInsurance,
 }: {
   doc: VaultDoc; token: string; onDelete: (id: string) => void;
+  onUpdate: (updated: VaultDoc) => void;
   expanded: boolean; onToggle: () => void; hasInsurance: boolean;
 }) {
   const { lang, alertDays, currency, privacyMode } = useSettings();
+
+  // ── Delete state ────────────────────────────────────────────────────────────
   const [deleting, setDeleting] = useState(false);
   const [showConfirm, setShowConfirm] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
   const [showModal, setShowModal] = useState(false);
   const [imgError, setImgError] = useState(false);
 
+  // ── Inline edit state (expanded row) ────────────────────────────────────────
+  const [fieldDrafts, setFieldDrafts] = useState<Record<string, string>>(() => initDrafts(doc.raw_analysis));
+  const [notesDraft, setNotesDraft] = useState(doc.user_notes ?? '');
+  const [rowSaveStatus, setRowSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
+
+  // ── Derived display values ───────────────────────────────────────────────────
   const ra = doc.raw_analysis ?? {};
   const dueAlert = doc.document_type === 'bill' ? getDueAlert(ra.due_date, alertDays) : null;
   const liquid = isLiquid(doc);
@@ -95,8 +105,19 @@ export const DocumentRow = React.memo(function DocumentRow({
     return isNaN(dt.getTime()) ? null : dt.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
   })();
 
-  const metaEntries = Object.entries(ra).filter(([key, v]) => v !== null && v !== undefined && v !== '' && key !== 'is_media');
+  // ── Key fields + other fields split ─────────────────────────────────────────
+  const keyFieldsSet = new Set(EDITABLE_FIELDS[doc.document_type] ?? []);
+  const keyFields = EDITABLE_FIELDS[doc.document_type] ?? [];
+  const allEntries = Object.entries(ra).filter(([key, v]) => v !== null && v !== undefined && v !== '' && key !== 'is_media');
+  const otherEntries = allEntries.filter(([key]) => !keyFieldsSet.has(key));
 
+  // ── isDirty for inline edits ─────────────────────────────────────────────────
+  const rowIsDirty = useMemo(() => {
+    if (notesDraft !== (doc.user_notes ?? '')) return true;
+    return keyFields.some(key => (fieldDrafts[key] ?? '') !== (ra[key] != null ? String(ra[key]) : ''));
+  }, [fieldDrafts, notesDraft, doc, keyFields, ra]);
+
+  // ── Status dots ──────────────────────────────────────────────────────────────
   const dots: Array<{ cls: string; tip: string }> = [];
   if (dueAlert === 'overdue')  dots.push({ cls: 'bg-destructive', tip: lang === 'he' ? 'באיחור' : 'Overdue' });
   if (dueAlert === 'due-soon') dots.push({ cls: 'bg-zen-warm',    tip: lang === 'he' ? 'בקרוב'  : 'Due Soon' });
@@ -111,6 +132,7 @@ export const DocumentRow = React.memo(function DocumentRow({
     ? 'bg-secondary/50'
     : 'hover:bg-secondary/30';
 
+  // ── Delete ───────────────────────────────────────────────────────────────────
   const handleDeleteClick = (e: React.MouseEvent) => { e.stopPropagation(); setShowConfirm(true); };
 
   const confirmDelete = async () => {
@@ -118,8 +140,8 @@ export const DocumentRow = React.memo(function DocumentRow({
     setDeleting(true);
     try {
       const { data: { session } } = await supabase.auth.getSession();
-      const token = session?.access_token ?? '';
-      await deleteDocument(doc.id, token);
+      const freshToken = session?.access_token ?? '';
+      await deleteDocument(doc.id, freshToken);
       onDelete(doc.id);
     } catch {
       setDeleteError(translations.deleteFailMsg[lang]);
@@ -127,15 +149,64 @@ export const DocumentRow = React.memo(function DocumentRow({
     }
   };
 
+  // ── Row inline save ──────────────────────────────────────────────────────────
+  const handleRowSave = async (e: React.MouseEvent) => {
+    e.stopPropagation();
+    setRowSaveStatus('saving');
+    try {
+      const { data: { session: fresh } } = await supabase.auth.getSession();
+      const freshToken = fresh?.access_token ?? '';
+      const rawPatch: Record<string, unknown> = {};
+      for (const key of keyFields) {
+        rawPatch[key] = fieldDrafts[key] === '' ? null : fieldDrafts[key];
+      }
+      const updated = await updateDocument(doc.id, { user_notes: notesDraft, raw_analysis: rawPatch }, freshToken);
+      syncDraftsFromDoc(updated);
+      onUpdate(updated);
+      setRowSaveStatus('saved');
+      setTimeout(() => setRowSaveStatus('idle'), 2500);
+    } catch {
+      setRowSaveStatus('error');
+      setTimeout(() => setRowSaveStatus('idle'), 3000);
+    }
+  };
+
+  // ── Sync drafts (called after row save OR modal save) ────────────────────────
+  const syncDraftsFromDoc = (updated: VaultDoc) => {
+    setFieldDrafts(initDrafts(updated.raw_analysis));
+    setNotesDraft(updated.user_notes ?? '');
+  };
+
+  // ── Modal update handler — re-syncs row drafts ───────────────────────────────
+  const handleModalUpdate = (updated: VaultDoc) => {
+    syncDraftsFromDoc(updated);
+    onUpdate(updated);
+  };
+
   const hasThumbnail = !!doc.thumbnail_url && !imgError;
   const { emoji } = typeConfig(doc.document_type);
+
+  // ── Input helpers ────────────────────────────────────────────────────────────
+  const inputCls = (key: string) => {
+    const val = fieldDrafts[key] ?? '';
+    const original = ra[key] != null ? String(ra[key]) : '';
+    const isModified = val !== original && val !== '';
+    const isAiExtracted = original !== '';
+    const ring = isModified
+      ? 'ring-1 ring-blue-500/40 border-blue-500/40'
+      : isAiExtracted
+      ? 'ring-1 ring-zen-sage/30 border-zen-sage/30'
+      : '';
+    return `w-full bg-background border border-border/60 rounded-lg px-2.5 py-1.5 text-sm text-foreground focus:outline-none focus:ring-1 focus:ring-zen-sage/50 focus:border-zen-sage/50 transition-colors placeholder-muted-foreground/30 ${ring}`;
+  };
 
   return (
     <>
       {showConfirm && <ConfirmDialog filename={doc.file_name} onConfirm={confirmDelete} onCancel={() => setShowConfirm(false)} />}
       {deleteError && <ErrorToast message={deleteError} onDismiss={() => setDeleteError(null)} />}
-      {showModal && <DocumentModal doc={doc} token={token} onClose={() => setShowModal(false)} />}
+      {showModal && <DocumentModal doc={doc} token={token} onClose={() => setShowModal(false)} onUpdate={handleModalUpdate} />}
 
+      {/* ── Main table row ────────────────────────────────────────────────────── */}
       <TableRow className={`cursor-pointer transition-all duration-200 border-b border-border/50 ${rowCls}`} onClick={onToggle}>
         {/* Filename + Thumbnail with HoverCard */}
         <TableCell className="py-4">
@@ -218,15 +289,17 @@ export const DocumentRow = React.memo(function DocumentRow({
         </TableCell>
       </TableRow>
 
-      {/* Expanded row */}
+      {/* ── Expanded row ──────────────────────────────────────────────────────── */}
       {expanded && (
         <TableRow className="border-b border-border/50">
           <TableCell colSpan={6} className="p-0">
             <div className="bg-secondary/30 border-t border-border/30">
-              <div className="p-6 max-w-3xl ms-0 me-auto w-full overflow-hidden" dir={lang === 'he' ? 'rtl' : 'ltr'}>
+              <div className="p-5 max-w-3xl ms-0 me-auto w-full overflow-hidden" dir={lang === 'he' ? 'rtl' : 'ltr'}>
+
+                {/* ── AI summary ──────────────────────────────────────────────── */}
                 {ra.is_media ? (
-                  <div className="mb-5 text-start">
-                    <h4 className="text-xs font-medium text-muted-foreground mb-2">{translations.mediaDescription[lang]}</h4>
+                  <div className="mb-5">
+                    <h4 className="text-[11px] font-medium text-muted-foreground uppercase tracking-wide mb-2">{translations.mediaDescription[lang]}</h4>
                     <p className="text-sm text-muted-foreground italic mb-1">{translations.mediaNote[lang]}</p>
                     {(doc.summary_he || doc.summary_en) && (
                       <p className="text-sm text-foreground leading-relaxed break-words">
@@ -237,26 +310,80 @@ export const DocumentRow = React.memo(function DocumentRow({
                 ) : (
                   <>
                     {summary && (
-                      <div className="mb-5 text-start">
-                        <h4 className="text-xs font-medium text-muted-foreground mb-2">{translations.tableSummary[lang]}</h4>
+                      <div className="mb-5">
+                        <h4 className="text-[11px] font-medium text-muted-foreground uppercase tracking-wide mb-2">{translations.tableSummary[lang]}</h4>
                         <p className="text-sm text-foreground leading-relaxed break-words">{summary}</p>
                       </div>
                     )}
-                    {metaEntries.length > 0 && (
-                      <div className="mb-5 text-start">
-                        <h4 className="text-xs font-medium text-muted-foreground mb-3">{translations.tableDetails[lang]}</h4>
-                        <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
-                          {metaEntries.map(([key, value]) => {
+
+                    {/* ── Inline editable key fields ──────────────────────────── */}
+                    {keyFields.length > 0 && (
+                      <div className="mb-5">
+                        <h4 className="text-[11px] font-medium text-muted-foreground uppercase tracking-wide mb-3">{translations.extractedFields[lang]}</h4>
+                        <div className="grid grid-cols-2 md:grid-cols-4 gap-2.5">
+                          {keyFields.map(key => {
+                            const meta = FIELD_META[key];
+                            if (!meta) return null;
+                            const val = fieldDrafts[key] ?? '';
+                            const original = ra[key] != null ? String(ra[key]) : '';
+                            const isModified = val !== original && val !== '';
+                            const isAiExtracted = original !== '';
+                            return (
+                              <div key={key} className="bg-card rounded-lg border border-border/40 p-2.5 min-w-0">
+                                <div className="flex items-center gap-1 mb-1.5">
+                                  <p className="text-[10px] text-muted-foreground tracking-wide truncate">{key.replace(/_/g, ' ')}</p>
+                                  {isAiExtracted && !isModified && (
+                                    <span className="text-[9px] text-zen-sage/70 font-semibold flex-shrink-0">AI</span>
+                                  )}
+                                  {isModified && (
+                                    <span className="text-[9px] text-blue-500 font-semibold flex-shrink-0">edited</span>
+                                  )}
+                                </div>
+                                {meta.type === 'currency' ? (
+                                  <select
+                                    value={val}
+                                    onChange={e => { e.stopPropagation(); setFieldDrafts(prev => ({ ...prev, [key]: e.target.value })); }}
+                                    onClick={e => e.stopPropagation()}
+                                    className={`${inputCls(key)} cursor-pointer`}
+                                  >
+                                    <option value="">—</option>
+                                    <option value="ILS">₪ ILS</option>
+                                    <option value="USD">$ USD</option>
+                                    <option value="EUR">€ EUR</option>
+                                  </select>
+                                ) : (
+                                  <input
+                                    type={meta.type === 'date' ? 'date' : meta.type === 'number' ? 'number' : 'text'}
+                                    value={val}
+                                    onChange={e => { e.stopPropagation(); setFieldDrafts(prev => ({ ...prev, [key]: e.target.value })); }}
+                                    onClick={e => e.stopPropagation()}
+                                    placeholder={isAiExtracted ? original : '—'}
+                                    step={meta.type === 'number' ? 'any' : undefined}
+                                    className={inputCls(key)}
+                                  />
+                                )}
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* ── Read-only non-key fields ────────────────────────────── */}
+                    {otherEntries.length > 0 && (
+                      <div className="mb-5">
+                        <h4 className="text-[11px] font-medium text-muted-foreground uppercase tracking-wide mb-3">{translations.tableDetails[lang]}</h4>
+                        <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
+                          {otherEntries.map(([key, value]) => {
                             const rawStr = String(value);
                             const isMoney = SENSITIVE_KEYS.has(key) && !isNaN(Number(value));
-                            let displayStr = rawStr;
-                            if (isMoney) {
-                              displayStr = fmtMoney(convertAmount(Number(value), String(ra.currency ?? 'ILS'), currency), symbol);
-                            }
+                            const displayStr = isMoney
+                              ? fmtMoney(convertAmount(Number(value), String(ra.currency ?? 'ILS'), currency), symbol)
+                              : rawStr;
                             return (
-                              <div key={key} className="bg-card rounded-lg border border-border/50 p-3 text-start min-w-0">
-                                <p className="text-[10px] text-muted-foreground tracking-wide mb-1 break-words">{key.replace(/_/g, ' ')}</p>
-                                <p className="text-sm font-medium text-foreground break-words">
+                              <div key={key} className="bg-card rounded-lg border border-border/40 px-2.5 py-2 min-w-0">
+                                <p className="text-[10px] text-muted-foreground tracking-wide mb-0.5 break-words">{key.replace(/_/g, ' ')}</p>
+                                <p className="text-xs font-medium text-foreground break-words">
                                   {SENSITIVE_KEYS.has(key) ? <PrivateValue value={displayStr} /> : displayStr}
                                 </p>
                               </div>
@@ -268,18 +395,49 @@ export const DocumentRow = React.memo(function DocumentRow({
                   </>
                 )}
 
-                {/* Actions */}
-                <div className="flex items-center gap-2 pt-2 border-t border-border/30">
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    className="text-destructive border-destructive/20 hover:bg-destructive/5 hover:text-destructive gap-1.5 text-xs"
-                    onClick={handleDeleteClick}
-                    disabled={deleting}
-                  >
-                    <Trash2 className="w-3.5 h-3.5" />
-                    {deleting ? translations.deletingDoc[lang] : translations.deleteDoc[lang]}
-                  </Button>
+                {/* ── User notes ──────────────────────────────────────────────── */}
+                <div className="mb-5">
+                  <h4 className="text-[11px] font-medium text-muted-foreground uppercase tracking-wide mb-2">{translations.userNotes[lang]}</h4>
+                  <textarea
+                    value={notesDraft}
+                    onChange={e => setNotesDraft(e.target.value)}
+                    onClick={e => e.stopPropagation()}
+                    rows={2}
+                    placeholder={translations.userNotesPlaceholder[lang]}
+                    className="w-full bg-background border border-border/60 rounded-lg px-2.5 py-1.5 text-sm text-foreground focus:outline-none focus:ring-1 focus:ring-zen-sage/50 resize-none placeholder-muted-foreground/30 transition-colors"
+                  />
+                </div>
+
+                {/* ── Action bar ──────────────────────────────────────────────── */}
+                <div className="flex flex-wrap items-center gap-2 pt-3 border-t border-border/30">
+                  {/* Save — visible when dirty or after save/error */}
+                  {(rowIsDirty || rowSaveStatus !== 'idle') && (
+                    <Button
+                      size="sm"
+                      onClick={handleRowSave}
+                      disabled={rowSaveStatus === 'saving' || (!rowIsDirty && rowSaveStatus === 'idle')}
+                      className={`gap-1.5 text-xs ${
+                        rowSaveStatus === 'saved'
+                          ? 'bg-zen-sage hover:bg-zen-sage text-white'
+                          : rowSaveStatus === 'error'
+                          ? 'bg-destructive/10 text-destructive border border-destructive/20 hover:bg-destructive/15'
+                          : 'bg-zen-sage hover:bg-zen-sage/90 text-white'
+                      }`}
+                    >
+                      {rowSaveStatus === 'saving' && <div className="w-3 h-3 border-2 border-white/40 border-t-white rounded-full animate-spin" />}
+                      {rowSaveStatus === 'saved' && <Check className="w-3.5 h-3.5" />}
+                      {rowSaveStatus === 'error' && <AlertCircle className="w-3.5 h-3.5" />}
+                      {rowSaveStatus === 'idle' && <Save className="w-3.5 h-3.5" />}
+                      {rowSaveStatus === 'saving'
+                        ? translations.saving[lang]
+                        : rowSaveStatus === 'saved'
+                        ? translations.savedConfirm[lang]
+                        : rowSaveStatus === 'error'
+                        ? translations.saveError[lang]
+                        : translations.saveChanges[lang]}
+                    </Button>
+                  )}
+
                   <Button
                     variant="outline"
                     size="sm"
@@ -289,7 +447,19 @@ export const DocumentRow = React.memo(function DocumentRow({
                     <FileText className="w-3.5 h-3.5" />
                     {translations.viewDoc[lang]}
                   </Button>
+
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="text-destructive border-destructive/20 hover:bg-destructive/5 hover:text-destructive gap-1.5 text-xs ms-auto"
+                    onClick={handleDeleteClick}
+                    disabled={deleting}
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                    {deleting ? translations.deletingDoc[lang] : translations.deleteDoc[lang]}
+                  </Button>
                 </div>
+
               </div>
             </div>
           </TableCell>

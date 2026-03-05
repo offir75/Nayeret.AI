@@ -50,4 +50,17 @@ export const translations = {
   confirmCancel:      { en: 'Cancel',               he: 'ביטול'                 },
   confirmDelete:      { en: 'Delete',               he: 'מחק'                   },
   deleteFailMsg:      { en: 'Failed to delete document.', he: 'מחיקת המסמך נכשלה.' },
+  // ── DocumentModal edit panel ───────────────────────────────────────────────
+  tabView:             { en: 'View',                               he: 'צפייה'                          },
+  tabEdit:             { en: 'Edit',                               he: 'עריכה'                          },
+  documentType:        { en: 'Document Type',                      he: 'סוג מסמך'                       },
+  extractedFields:     { en: 'Extracted Fields',                   he: 'שדות שחולצו'                    },
+  processingOcr:       { en: 'Processing document…',              he: 'מעבד מסמך…'                    },
+  noFieldsExtracted:   { en: 'No fields extracted',                he: 'לא חולצו שדות'                  },
+  saveChanges:         { en: 'Save Changes',                       he: 'שמור שינויים'                   },
+  saving:              { en: 'Saving…',                           he: 'שומר…'                         },
+  savedConfirm:        { en: 'Saved ✓',                           he: 'נשמר ✓'                         },
+  saveError:           { en: 'Save failed',                        he: 'שמירה נכשלה'                    },
+  userNotes:           { en: 'Notes',                              he: 'הערות'                          },
+  userNotesPlaceholder:{ en: 'Add context, TODOs, or reminders…', he: 'הוסף הקשר, משימות, או תזכורות…' },
 };

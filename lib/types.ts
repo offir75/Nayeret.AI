@@ -12,6 +12,14 @@ export interface VaultDoc {
   raw_analysis: Record<string, unknown> | null;
   thumbnail_url: string | null;
   created_at: string;
+  user_notes: string | null;
+}
+
+export interface UpdateDocumentPayload {
+  id: string;
+  user_notes?: string;
+  document_type?: DocumentType;
+  raw_analysis?: Record<string, unknown>;
 }
 
 export interface AppSettings {
