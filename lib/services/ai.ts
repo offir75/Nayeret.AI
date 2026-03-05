@@ -98,7 +98,7 @@ export async function extractMetadata(documentType: DocumentType, text: string):
   let prompt: string;
   switch (documentType) {
     case 'financial_report':
-      prompt = `Extract the following fields as a JSON object:\ntotal_balance, liquidity_date (YYYY-MM-DD), management_fee, employer_name\n\nDocument:\n${text.slice(0, 6000)}`;
+      prompt = `Extract the following fields as a JSON object:\n- total_balance: the grand total amount for the entire period (the overall sum charged or paid — NOT remaining installments or future payments)\n- liquidity_date: the report or statement date (YYYY-MM-DD)\n- management_fee: any management fee mentioned (null if none)\n- employer_name: the service provider, institution, or employer name\n\nDocument:\n${text.slice(0, 6000)}`;
       break;
     case 'bill':
       prompt = `Extract the following fields as a JSON object:\nprovider, total_amount, currency, due_date (YYYY-MM-DD), is_automatic_payment (true/false)\n\nDocument:\n${text.slice(0, 6000)}`;

@@ -20,7 +20,7 @@ const SEMANTIC_UNIQUE_FIELDS: Partial<Record<DocumentType, string[]>> = {
   insurance:        ['policy_number'],
   bill:             ['provider', 'due_date'],
   receipt:          ['merchant', 'purchase_date'],
-  financial_report: ['total_balance', 'liquidity_date'],
+  financial_report: ['liquidity_date'],
   claim:            ['policy_number', 'claim_date'],
 };
 
