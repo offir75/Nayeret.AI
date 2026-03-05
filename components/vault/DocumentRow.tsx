@@ -313,7 +313,7 @@ export const DocumentRow = React.memo(function DocumentRow({
                     {summary && (
                       <div className="mb-5">
                         <h4 className="text-[11px] font-medium text-muted-foreground uppercase tracking-wide mb-2">{translations.tableSummary[lang]}</h4>
-                        <p className="text-sm text-foreground leading-relaxed break-words line-clamp-4 max-w-full overflow-hidden">{summary}</p>
+                        <p className="text-sm text-foreground leading-relaxed break-words w-full">{summary}</p>
                       </div>
                     )}
 

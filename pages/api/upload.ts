@@ -37,6 +37,7 @@ export default async function handler(
     }
 
     // ── Tier 1: Byte-level duplicate check ──────────────────────────────────────────
+    if (!fileHash) console.warn('[dedup] No fileHash provided for:', filename);
     if (fileHash && !force) {
       const { data: existing } = await supabaseAdmin
         .from('documents')
@@ -46,6 +47,7 @@ export default async function handler(
         .maybeSingle();
 
       if (existing) {
+        console.log('[dedup] Duplicate detected for hash:', fileHash, '| owner:', userId, '| existing doc id:', existing.id, '| file:', existing.file_name);
         return res.status(200).json({
           isDuplicate: true,
           existingDoc: {

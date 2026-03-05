@@ -67,10 +67,11 @@ export async function describeImage(fileBuffer: Buffer, mimeType: string): Promi
 
 export async function summarizeDocument(text: string): Promise<{ he: string; en: string }> {
   const raw = await callGemini(
-    `Summarize the following document in exactly 2 sentences per language.\n` +
+    `Summarize this document in a maximum of 25 words per language.\n` +
+    `Focus only on: the entity/provider name, the total amount, and any urgent action (e.g. payment due date).\n` +
     `Return a JSON object with exactly two keys:\n` +
-    `  "he": the 2-sentence summary in Hebrew\n` +
-    `  "en": the 2-sentence summary in English\n\n` +
+    `  "he": the summary in Hebrew (max 25 words)\n` +
+    `  "en": the summary in English (max 25 words)\n\n` +
     `Return only the JSON object, no other text.\n\nDocument:\n${text.slice(0, 8000)}`,
     true
   );
