@@ -30,6 +30,7 @@ interface Props {
 
 export default function DocumentModal({ doc, token, onClose, onUpdate }: Props) {
   const { lang } = useSettings();
+  const displayName = doc.original_filename ?? doc.file_name;
   const isPdf = doc.file_name.toLowerCase().endsWith('.pdf');
   const fileUrl = `/api/file?id=${doc.id}&t=${encodeURIComponent(token)}`;
 
@@ -239,8 +240,8 @@ export default function DocumentModal({ doc, token, onClose, onUpdate }: Props) 
 
       {/* Header */}
       <div className="flex items-center justify-between px-4 py-3 bg-zinc-900/80 border-b border-white/10 flex-shrink-0 gap-3">
-        <h2 className="text-sm font-semibold text-white truncate min-w-0 flex-1">
-          {doc.file_name}
+        <h2 className="text-sm font-semibold text-white min-w-0 flex-1 break-words line-clamp-2 leading-snug" title={displayName}>
+          {displayName}
         </h2>
 
         {/* Mobile tab switcher */}
@@ -286,7 +287,7 @@ export default function DocumentModal({ doc, token, onClose, onUpdate }: Props) 
           {isPdf ? (
             <iframe
               src={fileUrl}
-              title={doc.file_name}
+              title={displayName}
               className={`w-full h-full border-0 transition-opacity duration-300 ${viewerLoaded ? 'opacity-100' : 'opacity-0'}`}
               onLoad={() => setViewerLoaded(true)}
             />
@@ -294,7 +295,7 @@ export default function DocumentModal({ doc, token, onClose, onUpdate }: Props) 
             <div className="flex items-center justify-center w-full h-full">
               <img
                 src={fileUrl}
-                alt={doc.file_name}
+                alt={displayName}
                 className={`max-h-full max-w-full object-contain transition-opacity duration-300 ${viewerLoaded ? 'opacity-100' : 'opacity-0'}`}
                 onLoad={() => setViewerLoaded(true)}
                 onError={() => setViewerLoaded(true)}

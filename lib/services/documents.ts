@@ -50,10 +50,10 @@ export async function uploadFileApi(
   return res.json() as Promise<import('@/lib/types').UploadApiResponse>;
 }
 
-export async function analyzeFileApi(filename: string, mimeType: string, accessToken: string, fileHash?: string): Promise<AnalyzeApiResponse> {
+export async function analyzeFileApi(filename: string, mimeType: string, accessToken: string, fileHash?: string, originalFilename?: string): Promise<AnalyzeApiResponse> {
   const res = await apiFetch('/api/analyze', {
     method: 'POST',
-    body: JSON.stringify({ filename, mimeType, fileHash }),
+    body: JSON.stringify({ filename, mimeType, fileHash, originalFilename }),
   }, accessToken);
   const data = await res.json() as AnalyzeApiResponse & { error?: string };
   if (!res.ok || !data.success) throw new Error(data.error ?? 'Analysis failed');

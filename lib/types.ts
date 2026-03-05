@@ -13,6 +13,7 @@ export interface VaultDoc {
   thumbnail_url: string | null;
   created_at: string;
   user_notes: string | null;
+  original_filename: string | null;
 }
 
 export interface UpdateDocumentPayload {

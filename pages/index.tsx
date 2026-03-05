@@ -467,7 +467,7 @@ export default function Dashboard() {
           setDocs(prev => prev.filter(d => d.id !== uploadResult.existingDoc!.id));
         }
 
-        const d = await analyzeFileApi(normalizedName, normalizedFile.type, token, fileHash);
+        const d = await analyzeFileApi(normalizedName, normalizedFile.type, token, fileHash, job.originalFile.name);
 
         const supabaseId: string = d.supabaseId ?? '';
         const newDoc: VaultDoc = {
@@ -480,6 +480,7 @@ export default function Dashboard() {
           thumbnail_url: null,
           created_at: new Date().toISOString(),
           user_notes: null,
+          original_filename: job.originalFile.name,
         };
         setDocs(prev => [newDoc, ...prev.filter(p => p.id !== supabaseId)]);
         setUploadQueue(prev => prev.map(j => j.id === job.id ? { ...j, status: 'done' } : j));

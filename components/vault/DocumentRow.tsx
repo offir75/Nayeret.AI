@@ -185,6 +185,7 @@ export const DocumentRow = React.memo(function DocumentRow({
 
   const hasThumbnail = !!doc.thumbnail_url && !imgError;
   const { emoji } = typeConfig(doc.document_type);
+  const displayName = doc.original_filename ?? doc.file_name;
 
   // ── Input helpers ────────────────────────────────────────────────────────────
   const inputCls = (key: string) => {
@@ -202,7 +203,7 @@ export const DocumentRow = React.memo(function DocumentRow({
 
   return (
     <>
-      {showConfirm && <ConfirmDialog filename={doc.file_name} onConfirm={confirmDelete} onCancel={() => setShowConfirm(false)} />}
+      {showConfirm && <ConfirmDialog filename={displayName} onConfirm={confirmDelete} onCancel={() => setShowConfirm(false)} />}
       {deleteError && <ErrorToast message={deleteError} onDismiss={() => setDeleteError(null)} />}
       {showModal && <DocumentModal doc={doc} token={token} onClose={() => setShowModal(false)} onUpdate={handleModalUpdate} />}
 
@@ -223,8 +224,8 @@ export const DocumentRow = React.memo(function DocumentRow({
                     <div className="w-full h-full flex items-center justify-center text-base select-none">{emoji}</div>
                   )}
                 </div>
-                <div>
-                  <p className="text-sm font-medium text-foreground leading-tight truncate max-w-[160px]" title={doc.file_name}>{doc.file_name}</p>
+                <div className="min-w-0">
+                  <p className="text-sm font-medium text-foreground leading-tight truncate max-w-[180px] sm:max-w-[220px]" title={displayName}>{displayName}</p>
                   <p className="text-xs text-muted-foreground mt-0.5">
                     {new Date(doc.created_at).toLocaleDateString(lang === 'he' ? 'he-IL' : 'en-GB', { day: '2-digit', month: 'short', year: 'numeric' })}
                   </p>
@@ -234,13 +235,13 @@ export const DocumentRow = React.memo(function DocumentRow({
             {hasThumbnail && (
               <HoverCardContent side="left" align="start" className="w-72 p-0 overflow-hidden rounded-xl border-border shadow-lg">
                 <div className="relative aspect-[4/3] bg-secondary">
-                  <img src={doc.thumbnail_url!} alt={`תצוגה מקדימה: ${doc.file_name}`} className="w-full h-full object-cover" />
+                  <img src={doc.thumbnail_url!} alt={displayName} className="w-full h-full object-cover" />
                   <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-zen-stone/80 to-transparent p-3">
-                    <p className="text-xs text-white/90 font-medium">{doc.file_name}</p>
+                    <p className="text-xs text-white/90 font-medium line-clamp-2">{displayName}</p>
                   </div>
                 </div>
                 <div className="p-3 bg-card">
-                  <p className="text-xs text-muted-foreground leading-relaxed line-clamp-3">{summary}</p>
+                  <p className="text-xs text-muted-foreground leading-relaxed line-clamp-4">{summary}</p>
                   <div className="flex items-center gap-2 mt-2">
                     <CategoryBadge type={doc.document_type} />
                     {amount && <span className="text-[10px] text-muted-foreground tabular-nums">{amount}</span>}
@@ -312,7 +313,7 @@ export const DocumentRow = React.memo(function DocumentRow({
                     {summary && (
                       <div className="mb-5">
                         <h4 className="text-[11px] font-medium text-muted-foreground uppercase tracking-wide mb-2">{translations.tableSummary[lang]}</h4>
-                        <p className="text-sm text-foreground leading-relaxed break-words">{summary}</p>
+                        <p className="text-sm text-foreground leading-relaxed break-words line-clamp-4 max-w-full overflow-hidden">{summary}</p>
                       </div>
                     )}
 
