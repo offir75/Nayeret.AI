@@ -136,16 +136,16 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       }
     } else {
       // PDF — try pdf-parse first, fall back to Gemini OCR for scanned/image-based PDFs
-      let pdfData;
+      //       Also fall back if pdf-parse throws (some encoded/complex PDFs crash it)
       try {
-        pdfData = await pdfParse(fileBuffer);
+        const pdfData = await pdfParse(fileBuffer);
+        text = pdfData.text || '';
       } catch (err) {
-        console.error('pdf-parse failed:', err);
-        return res.status(422).json({ error: 'pdf-parse failed', details: String(err) });
+        console.warn('pdf-parse threw, falling back to Gemini OCR:', filename, String(err));
+        text = '';
       }
-      text = pdfData.text || '';
       if (!text.trim()) {
-        // Scanned or image-based PDF — fall back to Gemini OCR
+        // Scanned, image-based, or crash-causing PDF — fall back to Gemini OCR
         console.warn('pdf-parse returned no text, falling back to Gemini OCR:', filename);
         try {
           text = await ocrPdfFallback(fileBuffer);

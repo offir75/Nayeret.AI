@@ -44,8 +44,8 @@ export async function uploadFileApi(
     body: JSON.stringify({ file: base64, filename, fileHash, force }),
   }, accessToken);
   if (!res.ok) {
-    const err = await res.json().catch(() => ({})) as { error?: string };
-    throw new Error(err.error ?? 'Upload failed');
+    const err = await res.json().catch(() => ({})) as { error?: string; details?: string };
+    throw new Error([err.error ?? 'Upload failed', err.details].filter(Boolean).join(': '));
   }
   return res.json() as Promise<import('@/lib/types').UploadApiResponse>;
 }

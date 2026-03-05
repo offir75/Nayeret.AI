@@ -10,7 +10,25 @@ export function isSupportedFile(name: string): boolean {
   return SUPPORTED_EXTENSIONS.some(ext => name.toLowerCase().endsWith(ext));
 }
 
-// ─── Filename resolution ──────────────────────────────────────────────────────
+// ─── Filename sanitization + resolution ──────────────────────────────────────
+
+/**
+ * Strip non-ASCII and storage-unsafe characters so the name is safe as a
+ * Supabase Storage key.  The caller should store the original name separately.
+ */
+export function sanitizeFilename(name: string): string {
+  const dot = name.lastIndexOf('.');
+  const ext  = dot > 0 ? name.slice(dot).toLowerCase() : '';
+  const base = dot > 0 ? name.slice(0, dot) : name;
+  const safe = base
+    .replace(/[^\x21-\x7E]/g, '_')   // non-printable / non-ASCII → _
+    .replace(/[/\\?%*:|"<>]/g, '_')  // storage-unsafe chars → _
+    .replace(/\s+/g, '_')            // spaces → _
+    .replace(/_+/g, '_')             // collapse runs
+    .replace(/^_+|_+$/g, '')         // trim leading/trailing _
+    || `doc_${Date.now().toString(36)}`; // fallback when entire base was non-ASCII
+  return safe + ext;
+}
 
 export function resolveFilename(name: string, existingNames: Set<string>): string {
   if (!existingNames.has(name)) return name;

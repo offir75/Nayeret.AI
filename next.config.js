@@ -1,9 +1,18 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
+  experimental: {
+    serverActions: {
+      allowedOrigins: [
+        'thermophosphorescent-calamitoid-yadira.ngrok-free.dev',
+        '*.ngrok-free.dev',
+        '*.ngrok-free.app',
+        'localhost:3000'
+      ],
+    },
+  },
   webpack: (config, { isServer }) => {
     if (isServer) {
-      // Prevent webpack from bundling the canvas native module
-      // that pdfjs-dist optionally imports for server-side rendering.
+      // נחוץ עבור pdfjs-dist
       config.externals = [...(config.externals || []), 'canvas'];
     }
     return config;

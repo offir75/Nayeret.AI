@@ -1,24 +1,27 @@
 import Head from 'next/head';
-import { Settings, ChevronDown, ChevronUp, Search } from 'lucide-react';
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { Settings, Shield, Camera, Upload, Loader2, CheckCircle2, Sparkles, X, Search } from 'lucide-react';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useRouter } from 'next/router';
 import { useDropzone } from 'react-dropzone';
+import { motion, AnimatePresence } from 'framer-motion';
 import { supabase } from '@/supabase/browser';
 import type { User, Session } from '@supabase/supabase-js';
 
 import { translations } from '@/lib/vault/translations';
 import { SettingsContext, useSettings } from '@/lib/context/settings';
 import type { SettingsCtx } from '@/lib/context/settings';
-import type { VaultDoc, UploadJob, AppSettings, Lang, Currency, SortCol, DuplicateDocInfo, SemanticMatchInfo } from '@/lib/types';
+import type { VaultDoc, UploadJob, AppSettings, Lang, Currency, DuplicateDocInfo, SemanticMatchInfo } from '@/lib/types';
 import {
-  isSupportedFile, resolveFilename, readFileAsBase64,
+  isSupportedFile, sanitizeFilename, resolveFilename, readFileAsBase64,
   normalizeImageFile, renderPdfThumbnail, renderImageThumbnail, computeFileHash,
 } from '@/lib/vault/helpers';
 import { fetchDocuments, uploadFileApi, analyzeFileApi, saveThumbnailApi, deleteDocument, updateDocument } from '@/lib/services/documents';
-import { VaultSummaryBar, BulkProgressBar, IngestionHub, DocumentRow, DuplicateDialog, SemanticMatchToast } from '@/components/vault';
+import { VaultSummaryBar, DuplicateDialog, SemanticMatchToast } from '@/components/vault';
+import DocumentDrawer from '@/components/vault/DocumentDrawer';
+import VaultCard from '@/components/vault/VaultCard';
+import IngestionHub from '@/components/vault/IngestionHub';
 
-// ─── Spinner ──────────────────────────────────────────────────────────────────
+// ── Spinner ──────────────────────────────────────────────────────────────────
 
 function Spinner({ size = 'sm' }: { size?: 'sm' | 'lg' }) {
   return size === 'lg' ? (
@@ -28,7 +31,7 @@ function Spinner({ size = 'sm' }: { size?: 'sm' | 'lg' }) {
   );
 }
 
-// ─── PrivateValue ─────────────────────────────────────────────────────────────
+// ── PrivateValue ─────────────────────────────────────────────────────────────
 
 function PrivateValue({ value }: { value: string }) {
   const { privacyMode } = useSettings();
@@ -40,7 +43,7 @@ function PrivateValue({ value }: { value: string }) {
   );
 }
 
-// ─── Toggle ───────────────────────────────────────────────────────────────────
+// ── Toggle ───────────────────────────────────────────────────────────────────
 
 function Toggle({ checked, onChange, label }: { checked: boolean; onChange: (v: boolean) => void; label: string }) {
   return (
@@ -58,72 +61,7 @@ function Toggle({ checked, onChange, label }: { checked: boolean; onChange: (v: 
   );
 }
 
-// ─── SortIcon ─────────────────────────────────────────────────────────────────
-
-function SortIcon({ active, dir }: { active: boolean; dir: 'asc' | 'desc' }) {
-  if (!active) return <ChevronDown className="w-3 h-3 opacity-30" />;
-  return dir === 'asc'
-    ? <ChevronUp className="w-3 h-3 text-zen-sage" />
-    : <ChevronDown className="w-3 h-3 text-zen-sage" />;
-}
-
-// ─── EmptyState ───────────────────────────────────────────────────────────────
-
-function EmptyState({ isSearch }: { isSearch: boolean }) {
-  const { lang } = useSettings();
-  return (
-    <div className="flex flex-col items-center justify-center mt-24 text-center gap-3">
-      <div className="text-5xl">{isSearch ? '🔍' : '🗄️'}</div>
-      <p className="text-muted-foreground font-medium">{isSearch ? translations.noMatch[lang] : translations.emptyVault[lang]}</p>
-      {!isSearch && <p className="text-sm text-muted-foreground/70">{translations.uploadFirst[lang]}</p>}
-    </div>
-  );
-}
-
-// ─── ValidationDot ────────────────────────────────────────────────────────────
-
-function getValidationStatus(doc: VaultDoc): 'verified' | 'unsure' | 'missing' {
-  const ra = doc.raw_analysis ?? {};
-  if (ra.is_media) return 'unsure';
-  if (!doc.summary_he && !doc.summary_en) return 'missing';
-  switch (doc.document_type) {
-    case 'bill':           if (!ra.total_amount && !ra.provider) return 'missing'; if (!ra.due_date) return 'unsure'; break;
-    case 'financial_report': if (!ra.total_balance) return 'unsure'; break;
-    case 'receipt':        if (!ra.total_amount && !ra.merchant) return 'missing'; break;
-    case 'claim':          if (!ra.total_amount && !ra.insurer) return 'missing'; break;
-    case 'insurance':      if (!ra.insurer && !ra.policy_number) return 'missing'; break;
-    case 'identification': if (!ra.id_number && !ra.full_name) return 'missing'; break;
-  }
-  return 'verified';
-}
-
-function ValidationDot({ doc }: { doc: VaultDoc }) {
-  const { lang } = useSettings();
-  const status = getValidationStatus(doc);
-  const cfg = {
-    verified: { cls: 'bg-zen-sage',   tip: lang === 'he' ? 'מאומת'    : 'Verified'     },
-    unsure:   { cls: 'bg-zen-warm',   tip: lang === 'he' ? 'לא בטוח'  : 'AI Unsure'    },
-    missing:  { cls: 'bg-destructive', tip: lang === 'he' ? 'חסר מידע' : 'Missing Data' },
-  }[status];
-  return <span className={`inline-block w-2 h-2 rounded-full flex-shrink-0 ${cfg.cls}`} title={cfg.tip} />;
-}
-
-// ─── ErrorToast ───────────────────────────────────────────────────────────────
-
-function ErrorToast({ message, onDismiss }: { message: string; onDismiss: () => void }) {
-  useEffect(() => {
-    const t = setTimeout(onDismiss, 4000);
-    return () => clearTimeout(t);
-  }, [onDismiss]);
-  return (
-    <div className="fixed bottom-6 right-6 z-50 flex items-center gap-3 bg-destructive/10 border border-destructive/20 text-destructive text-sm rounded-xl px-4 py-3 shadow-lg">
-      <span>⚠️ {message}</span>
-      <button onClick={onDismiss} className="text-destructive/60 hover:text-destructive font-bold leading-none">×</button>
-    </div>
-  );
-}
-
-// ─── Settings Panel ───────────────────────────────────────────────────────────
+// ── Settings Panel ────────────────────────────────────────────────────────────
 
 function SettingsPanel({ isOpen, onClose, user, onLogout }: {
   isOpen: boolean; onClose: () => void; user: User | null; onLogout: () => void;
@@ -150,7 +88,6 @@ function SettingsPanel({ isOpen, onClose, user, onLogout }: {
         </div>
 
         <div className="flex-1 overflow-y-auto px-5 py-5 space-y-8">
-          {/* Profile */}
           <section>
             <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-3">{translations.profile[lang]}</h3>
             <div className="flex items-center gap-3 mb-4">
@@ -169,7 +106,6 @@ function SettingsPanel({ isOpen, onClose, user, onLogout }: {
             </button>
           </section>
 
-          {/* Language */}
           <section>
             <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-3">{translations.dashboardLang[lang]}</h3>
             <div className="flex rounded-lg border border-border overflow-hidden">
@@ -179,14 +115,12 @@ function SettingsPanel({ isOpen, onClose, user, onLogout }: {
             <p className="mt-2 text-xs text-muted-foreground">{translations.dashboardLangDesc[lang]}</p>
           </section>
 
-          {/* Privacy */}
           <section>
             <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-3">{translations.privacy[lang]}</h3>
             <Toggle checked={privacyMode} onChange={setPrivacyMode} label={translations.blurSensitive[lang]} />
             <p className="mt-2 text-xs text-muted-foreground">{translations.privacyDesc[lang]}</p>
           </section>
 
-          {/* Alert Threshold */}
           <section>
             <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-3">{translations.alertThreshold[lang]}</h3>
             <div className="flex items-center gap-3">
@@ -196,7 +130,6 @@ function SettingsPanel({ isOpen, onClose, user, onLogout }: {
             <p className="mt-2 text-xs text-muted-foreground">{translations.alertDesc[lang]}</p>
           </section>
 
-          {/* Currency */}
           <section>
             <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-3">{translations.currency[lang]}</h3>
             <div className="flex rounded-lg border border-border overflow-hidden">
@@ -215,119 +148,256 @@ function SettingsPanel({ isOpen, onClose, user, onLogout }: {
   );
 }
 
-// ─── Sort helpers ─────────────────────────────────────────────────────────────
+// ── CaptureZone ───────────────────────────────────────────────────────────────
 
-function getDocAmount(doc: VaultDoc): number {
-  const ra = doc.raw_analysis ?? {};
-  const v = ra.total_amount ?? ra.total_balance ?? ra.premium_amount;
-  return v !== undefined && v !== null ? Number(v) : -Infinity;
-}
+function CaptureZone({ onFiles, isDragActive, lang }: {
+  onFiles: (files: File[]) => void;
+  isDragActive: boolean;
+  lang: Lang;
+}) {
+  const cameraRef = useRef<HTMLInputElement>(null);
+  const galleryRef = useRef<HTMLInputElement>(null);
+  const filesRef = useRef<HTMLInputElement>(null);
+  const desktopRef = useRef<HTMLInputElement>(null);
 
-function getDocDueDate(doc: VaultDoc): number {
-  const ra = doc.raw_analysis ?? {};
-  const d = ra.due_date ?? ra.expiry_date ?? ra.liquidity_date ?? ra.claim_date ?? ra.purchase_date;
-  if (!d) return Infinity;
-  const t = new Date(String(d)).getTime();
-  return isNaN(t) ? Infinity : t;
-}
+  const accepted = 'image/*,.pdf,.heic,.heif';
 
-function sortDocs(docs: VaultDoc[], col: SortCol, dir: 'asc' | 'desc'): VaultDoc[] {
-  const asc = dir === 'asc';
-  return [...docs].sort((a, b) => {
-    let cmp = 0;
-    switch (col) {
-      case 'name':     cmp = a.file_name.localeCompare(b.file_name); break;
-      case 'category': cmp = a.document_type.localeCompare(b.document_type); break;
-      case 'amount':   cmp = getDocAmount(a) - getDocAmount(b); break;
-      case 'due_date': cmp = getDocDueDate(a) - getDocDueDate(b); break;
-      case 'uploaded': cmp = new Date(a.created_at).getTime() - new Date(b.created_at).getTime(); break;
-    }
-    return asc ? cmp : -cmp;
-  });
-}
+  const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(e.target.files ?? []);
+    if (files.length) onFiles(files);
+    e.target.value = '';
+  };
 
-// ─── VaultTable ───────────────────────────────────────────────────────────────
+  const GalleryIcon = (props: { className?: string }) => (
+    <svg {...props} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+      <rect width="18" height="18" x="3" y="3" rx="2" ry="2" /><circle cx="9" cy="9" r="2" /><path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21" />
+    </svg>
+  );
 
-function VaultTable({ docs, token, onDelete, onUpdate }: { docs: VaultDoc[]; token: string; onDelete: (id: string) => void; onUpdate: (updated: VaultDoc) => void }) {
-  const { lang } = useSettings();
-  const [expandedId, setExpandedId] = useState<string | null>(null);
-  const [sortCol, setSortCol] = useState<SortCol>('uploaded');
-  const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
-  const hasInsurance = docs.some(d => d.document_type === 'insurance');
+  const FolderIcon = (props: { className?: string }) => (
+    <svg {...props} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+      <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
+    </svg>
+  );
 
-  const toggle = useCallback((id: string) => setExpandedId(prev => prev === id ? null : id), []);
-
-  const handleSort = useCallback((col: SortCol) => {
-    if (col === sortCol) setSortDir(d => d === 'asc' ? 'desc' : 'asc');
-    else { setSortCol(col); setSortDir('asc'); }
-  }, [sortCol]);
-
-  const sorted = useMemo(() => sortDocs(docs, sortCol, sortDir), [docs, sortCol, sortDir]);
-
-  const thBtn = 'flex items-center gap-1.5 text-xs font-medium text-muted-foreground hover:text-foreground transition-colors';
+  const mobileActions = [
+    {
+      ref: cameraRef,
+      Icon: Camera,
+      label: lang === 'he' ? 'מצלמה' : 'Camera',
+      sublabel: lang === 'he' ? 'צלם מסמך' : 'Take photo',
+      accept: 'image/*',
+      capture: true,
+      primary: true,
+    },
+    {
+      ref: galleryRef,
+      Icon: GalleryIcon,
+      label: lang === 'he' ? 'גלריה' : 'Gallery',
+      sublabel: lang === 'he' ? 'בחר תמונה' : 'Pick photo',
+      accept: 'image/*',
+      capture: false,
+      primary: false,
+    },
+    {
+      ref: filesRef,
+      Icon: FolderIcon,
+      label: lang === 'he' ? 'קבצים' : 'Files',
+      sublabel: lang === 'he' ? 'עיון בקבצים' : 'Browse files',
+      accept: accepted,
+      capture: false,
+      primary: false,
+    },
+  ];
 
   return (
-    <div className="bg-card rounded-xl border border-border overflow-hidden">
-      <Table>
-        <TableHeader>
-          <TableRow className="hover:bg-transparent border-b border-border">
-            <TableHead>
-              <button onClick={() => handleSort('name')} className={thBtn}>
-                {translations.colFilename[lang]}<SortIcon active={sortCol === 'name'} dir={sortDir} />
-              </button>
-            </TableHead>
-            <TableHead>
-              <button onClick={() => handleSort('category')} className={thBtn}>
-                {translations.colCategory[lang]}<SortIcon active={sortCol === 'category'} dir={sortDir} />
-              </button>
-            </TableHead>
-            <TableHead className="hidden sm:table-cell">
-              <button onClick={() => handleSort('amount')} className={thBtn}>
-                {translations.colAmount[lang]}<SortIcon active={sortCol === 'amount'} dir={sortDir} />
-              </button>
-            </TableHead>
-            <TableHead className="hidden sm:table-cell">
-              <button onClick={() => handleSort('due_date')} className={thBtn}>
-                {translations.colDueDate[lang]}<SortIcon active={sortCol === 'due_date'} dir={sortDir} />
-              </button>
-            </TableHead>
-            <TableHead className="hidden sm:table-cell">
-              <button onClick={() => handleSort('uploaded')} className={thBtn}>
-                {translations.colUploaded[lang]}<SortIcon active={sortCol === 'uploaded'} dir={sortDir} />
-              </button>
-            </TableHead>
-            <TableHead className="text-center w-20">
-              <span className="text-xs font-medium text-muted-foreground">{translations.colStatus[lang]}</span>
-            </TableHead>
-          </TableRow>
-        </TableHeader>
-        <TableBody>
-          {sorted.map(doc => (
-            <DocumentRow
-              key={doc.id}
-              doc={doc}
-              token={token}
-              onDelete={onDelete}
-              onUpdate={onUpdate}
-              expanded={expandedId === doc.id}
-              onToggle={() => toggle(doc.id)}
-              hasInsurance={hasInsurance}
-            />
+    <motion.section
+      initial={{ opacity: 0, y: 16 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.5, delay: 0.1 }}
+      className="px-4 pt-4 md:px-8"
+    >
+      <h2 className="mb-3 text-sm font-semibold text-muted-foreground">
+        {lang === 'he' ? 'העלאת מסמכים' : 'Upload Documents'}
+      </h2>
+
+      {/* Mobile: 3-button grid */}
+      <div className="grid grid-cols-3 gap-3 md:hidden">
+        {mobileActions.map((action) => (
+          <motion.button
+            key={action.label}
+            whileTap={{ scale: 0.95 }}
+            onClick={() => action.ref.current?.click()}
+            className={`flex flex-col items-center gap-2 rounded-2xl border-2 border-dashed p-5 transition-colors ${
+              action.primary
+                ? 'border-zen-sage bg-zen-sage/5 text-zen-sage'
+                : 'border-border bg-card text-muted-foreground hover:border-zen-sage/40 hover:text-foreground'
+            }`}
+          >
+            <action.Icon className="h-7 w-7" />
+            <div className="text-center">
+              <p className="text-sm font-semibold">{action.label}</p>
+              <p className="text-[10px] text-muted-foreground">{action.sublabel}</p>
+            </div>
+          </motion.button>
+        ))}
+      </div>
+
+      {/* Desktop: drag-drop zone */}
+      <motion.div
+        whileHover={{ borderColor: '#7a8c6e' }}
+        onClick={() => desktopRef.current?.click()}
+        className={`hidden md:flex cursor-pointer flex-col items-center justify-center gap-4 rounded-2xl border-2 border-dashed p-10 transition-all ${
+          isDragActive
+            ? 'border-zen-sage bg-zen-sage/5'
+            : 'border-border bg-card hover:bg-secondary/50'
+        }`}
+      >
+        <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-zen-sage/10">
+          <Upload className="h-6 w-6 text-zen-sage" />
+        </div>
+        <div className="text-center">
+          <p className="text-base font-semibold text-foreground">
+            {lang === 'he' ? 'גרור קבצים לכאן או לחץ להעלאה' : 'Drop files here or click to upload'}
+          </p>
+          <p className="mt-1 text-sm text-muted-foreground">
+            {lang === 'he' ? 'PDF, תמונות, מסמכים סרוקים' : 'PDF, images, scanned documents'}
+          </p>
+        </div>
+      </motion.div>
+
+      {/* Hidden inputs */}
+      <input ref={cameraRef}  type="file" accept="image/*" capture="environment" onChange={handleChange} className="hidden" />
+      <input ref={galleryRef} type="file" accept="image/*" multiple onChange={handleChange} className="hidden" />
+      <input ref={filesRef}   type="file" accept={accepted} multiple onChange={handleChange} className="hidden" />
+      <input ref={desktopRef} type="file" accept={accepted} multiple onChange={handleChange} className="hidden" />
+    </motion.section>
+  );
+}
+
+// ── EmptyVault ────────────────────────────────────────────────────────────────
+
+function EmptyVault({ lang, onSuggestedSearch }: { lang: Lang; onSuggestedSearch: (term: string) => void }) {
+  const suggested = ['ארנונה', 'דרכון', 'ביטוח רכב', 'חשבון חשמל', 'חוזה שכירות'];
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 20 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.6, delay: 0.2 }}
+      className="flex flex-col items-center px-4 pb-32 pt-8 md:px-8"
+    >
+      <div className="relative mb-8 flex h-40 w-40 items-center justify-center">
+        {[0, 1, 2].map(i => (
+          <motion.div
+            key={i}
+            initial={{ opacity: 0, scale: 0.6 }}
+            animate={{ opacity: 0.15 - i * 0.04, scale: 1 }}
+            transition={{ duration: 1.2, delay: 0.4 + i * 0.2 }}
+            className="absolute rounded-full border border-zen-sage/30"
+            style={{ width: `${80 + i * 40}px`, height: `${80 + i * 40}px` }}
+          />
+        ))}
+        <motion.div
+          initial={{ opacity: 0, scale: 0 }}
+          animate={{ opacity: 1, scale: 1 }}
+          transition={{ type: 'spring', stiffness: 200, damping: 20, delay: 0.3 }}
+          className="relative z-10 flex h-20 w-20 items-center justify-center rounded-full bg-zen-sage/10"
+        >
+          <svg width="36" height="36" viewBox="0 0 24 24" fill="none" className="text-zen-sage">
+            <path d="M12 2C6.5 2 2 6.5 2 12c0 5 4 9.5 10 10-.5-1-1-2.5-1-4.5 0-3 2-5.5 2-8.5 0-2-1-4-1-7z" fill="currentColor" opacity="0.15" />
+            <path d="M12 2c0 3 1 5 1 7 0 3-2 5.5-2 8.5 0 2 .5 3.5 1 4.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+            <path d="M12 2C17.5 2 22 6.5 22 12c0 5-4 9.5-10 10" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" opacity="0.5" />
+            <path d="M12 2C6.5 2 2 6.5 2 12c0 5 4 9.5 10 10" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" opacity="0.5" />
+            <path d="M12 8c2 1 4 2.5 5 4.5" stroke="currentColor" strokeWidth="1" strokeLinecap="round" opacity="0.3" />
+            <path d="M12 8c-2 1-4 2.5-5 4.5" stroke="currentColor" strokeWidth="1" strokeLinecap="round" opacity="0.3" />
+          </svg>
+        </motion.div>
+      </div>
+
+      <motion.h2
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        transition={{ duration: 0.6, delay: 0.5 }}
+        className="mb-2 text-center text-base font-bold text-foreground"
+      >
+        {lang === 'he' ? 'הכספת שלך מוכנה' : 'Your vault is ready'}
+      </motion.h2>
+      <motion.p
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        transition={{ duration: 0.6, delay: 0.6 }}
+        className="mb-8 max-w-xs text-center text-sm leading-relaxed text-muted-foreground"
+      >
+        {lang === 'he' ? 'העלה את המסמך הראשון שלך למעלה כדי להתחיל.' : 'Upload your first document above to get started.'}
+      </motion.p>
+
+      <motion.div
+        initial={{ opacity: 0, y: 10 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.5, delay: 0.8 }}
+        className="w-full max-w-sm"
+      >
+        <p className="mb-3 text-center text-xs font-semibold text-muted-foreground/70">
+          {lang === 'he' ? 'חיפושים מומלצים' : 'Suggested searches'}
+        </p>
+        <div className="flex flex-wrap justify-center gap-2">
+          {suggested.map((term, i) => (
+            <motion.button
+              key={term}
+              initial={{ opacity: 0, scale: 0.8 }}
+              animate={{ opacity: 1, scale: 1 }}
+              transition={{ duration: 0.3, delay: 0.9 + i * 0.07 }}
+              whileHover={{ scale: 1.05 }}
+              whileTap={{ scale: 0.95 }}
+              onClick={() => onSuggestedSearch(term)}
+              className="rounded-full bg-card px-4 py-2 text-xs font-medium text-foreground shadow-sm ring-1 ring-border/60 transition-colors hover:bg-secondary hover:ring-zen-sage/30"
+            >
+              {term}
+            </motion.button>
           ))}
-          {sorted.length === 0 && (
-            <TableRow>
-              <TableCell colSpan={6} className="text-center py-12 text-muted-foreground">
-                {translations.noMatch[lang]}
-              </TableCell>
-            </TableRow>
-          )}
-        </TableBody>
-      </Table>
+        </div>
+      </motion.div>
+    </motion.div>
+  );
+}
+
+// ── EmptySearch ───────────────────────────────────────────────────────────────
+
+function EmptySearch({ lang }: { lang: Lang }) {
+  return (
+    <div className="flex flex-col items-center justify-center py-16 text-center gap-3">
+      <div className="text-4xl">🔍</div>
+      <p className="text-muted-foreground font-medium">{translations.noMatch[lang]}</p>
     </div>
   );
 }
 
-// ─── Main Dashboard ───────────────────────────────────────────────────────────
+// ── SkeletonCards ─────────────────────────────────────────────────────────────
+
+function SkeletonCards() {
+  return (
+    <div className="px-4 pt-4 pb-28 space-y-3 md:px-8">
+      {[0, 1, 2].map(i => (
+        <motion.div
+          key={i}
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          transition={{ duration: 0.3, delay: i * 0.1 }}
+          className="flex gap-3 rounded-xl bg-card p-4 ring-1 ring-border/60"
+        >
+          <div className="h-11 w-11 shrink-0 animate-pulse rounded-xl bg-muted" />
+          <div className="flex-1 space-y-2.5">
+            <div className="h-3.5 w-3/4 animate-pulse rounded-md bg-muted" />
+            <div className="h-3 w-full animate-pulse rounded-md bg-muted/70" />
+            <div className="h-2.5 w-1/3 animate-pulse rounded-md bg-muted/50" />
+          </div>
+        </motion.div>
+      ))}
+    </div>
+  );
+}
+
+// ── Main Dashboard ────────────────────────────────────────────────────────────
 
 export default function Dashboard() {
   const router = useRouter();
@@ -347,9 +417,10 @@ export default function Dashboard() {
   const [loadingLibrary, setLoadingLibrary] = useState(true);
   const [uploadQueue, setUploadQueue] = useState<UploadJob[]>([]);
   const [search, setSearch] = useState('');
-  const [searchFocused, setSearchFocused] = useState(false);
+  const [selectedDoc, setSelectedDoc] = useState<VaultDoc | null>(null);
+  const [activeTab, setActiveTab] = useState<'recent' | 'all'>('recent');
 
-  // ── Deduplication state ─────────────────────────────────────────────────────────────────────────────
+  // ── Deduplication state ───────────────────────────────────────────────────────
   const [tier1Conflict, setTier1Conflict] = useState<{
     filename: string;
     existing: DuplicateDocInfo;
@@ -362,7 +433,7 @@ export default function Dashboard() {
     newDocData: Partial<VaultDoc>;
   }[]>([]);
 
-  // ── Auth ───────────────────────────────────────────────────────────────────
+  // ── Auth ──────────────────────────────────────────────────────────────────────
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
@@ -380,7 +451,7 @@ export default function Dashboard() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // ── Settings persistence ───────────────────────────────────────────────────
+  // ── Settings persistence ──────────────────────────────────────────────────────
 
   const saveSettings = (patch: Partial<AppSettings>) => {
     try {
@@ -404,7 +475,7 @@ export default function Dashboard() {
   const setAlertDays = (v: number) => { setAlertDaysState(v); saveSettings({ alertDays: v }); };
   const setCurrency = (v: Currency) => { setCurrencyState(v); saveSettings({ currency: v }); };
 
-  // ── Load library ───────────────────────────────────────────────────────────
+  // ── Load library ──────────────────────────────────────────────────────────────
 
   useEffect(() => {
     if (!user || !session) return;
@@ -418,17 +489,17 @@ export default function Dashboard() {
 
   const handleLogout = async () => { await supabase.auth.signOut(); };
 
-  // ── Upload ─────────────────────────────────────────────────────────────────
+  // ── Upload ────────────────────────────────────────────────────────────────────
 
-  const handleFiles = async (files: File[]) => {
+  const handleFiles = useCallback(async (files: File[]) => {
     if (!session) return;
-    // Accept by extension OR by MIME type (handles iOS photos with no/unknown extension)
     const supported = files.filter(f => isSupportedFile(f.name) || f.type.startsWith('image/') || f.type === 'application/pdf');
     if (supported.length === 0) return;
 
     const existingNames = new Set(docs.map(d => d.file_name));
     const jobs: UploadJob[] = supported.map(file => {
-      const resolved = resolveFilename(file.name, existingNames);
+      // Sanitize to ASCII before dedup: Supabase Storage rejects non-ASCII keys
+      const resolved = resolveFilename(sanitizeFilename(file.name), existingNames);
       existingNames.add(resolved);
       return { id: Math.random().toString(36).slice(2), originalFile: file, resolvedName: resolved, status: 'queued' as const };
     });
@@ -441,17 +512,14 @@ export default function Dashboard() {
         const { data: { session: fresh } } = await supabase.auth.getSession();
         const token = fresh?.access_token ?? '';
 
-        // Normalize: convert HEIC/HEIF → JPEG on the client before uploading
         const normalizedFile = await normalizeImageFile(job.originalFile);
         const normalizedName = normalizedFile !== job.originalFile
           ? resolveFilename(normalizedFile.name, new Set(docs.map(d => d.file_name)))
           : job.resolvedName;
 
         const base64 = await readFileAsBase64(normalizedFile);
-
         const fileHash = await computeFileHash(normalizedFile);
 
-        // Tier 1: Check for byte-level duplicate
         const uploadResult = await uploadFileApi(normalizedName, base64, token, fileHash);
         if (uploadResult.isDuplicate && uploadResult.existingDoc) {
           const action = await new Promise<'view' | 'replace' | 'cancel'>(resolve => {
@@ -462,7 +530,6 @@ export default function Dashboard() {
             setUploadQueue(prev => prev.map(j => j.id === job.id ? { ...j, status: 'done' } : j));
             continue;
           }
-          // replace: re-upload with force=true (deletes old doc server-side)
           await uploadFileApi(normalizedName, base64, token, fileHash, true);
           setDocs(prev => prev.filter(d => d.id !== uploadResult.existingDoc!.id));
         }
@@ -485,7 +552,6 @@ export default function Dashboard() {
         setDocs(prev => [newDoc, ...prev.filter(p => p.id !== supabaseId)]);
         setUploadQueue(prev => prev.map(j => j.id === job.id ? { ...j, status: 'done' } : j));
 
-        // Tier 2: Show semantic match toast
         if (d.semanticMatch) {
           setSemanticNotifications(prev => [...prev, {
             key: Math.random().toString(36).slice(2),
@@ -519,7 +585,8 @@ export default function Dashboard() {
 
     const jobIds = new Set(jobs.map(j => j.id));
     setTimeout(() => setUploadQueue(prev => prev.filter(j => !jobIds.has(j.id))), 4000);
-  };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [session, docs]);
 
   const dismissSemanticNotification = (key: string) => {
     setSemanticNotifications(prev => prev.filter(n => n.key !== key));
@@ -538,9 +605,7 @@ export default function Dashboard() {
       const updated = await updateDocument(matchId, patch, token);
       await deleteDocument(newDocId, token);
       setDocs(prev => [updated, ...prev.filter(d => d.id !== matchId && d.id !== newDocId)]);
-    } catch {
-      // Silently fail — user keeps both
-    }
+    } catch {}
   };
 
   const { getRootProps, isDragActive } = useDropzone({
@@ -552,7 +617,10 @@ export default function Dashboard() {
 
   const isUploading = uploadQueue.some(j => j.status === 'queued' || j.status === 'analyzing');
   const handleDelete = (id: string) => setDocs(prev => prev.filter(d => d.id !== id));
-  const handleUpdate = (updated: VaultDoc) => setDocs(prev => prev.map(d => d.id === updated.id ? updated : d));
+  const handleUpdate = (updated: VaultDoc) => {
+    setDocs(prev => prev.map(d => d.id === updated.id ? updated : d));
+    setSelectedDoc(prev => prev?.id === updated.id ? updated : prev);
+  };
 
   const q = search.toLowerCase();
   const filtered = useMemo(() => docs.filter(d =>
@@ -562,10 +630,20 @@ export default function Dashboard() {
     String(d.raw_analysis?.merchant ?? '').toLowerCase().includes(q) ||
     String(d.raw_analysis?.insurer ?? '').toLowerCase().includes(q) ||
     String(d.raw_analysis?.institution ?? '').toLowerCase().includes(q) ||
-    (d.user_notes ?? '').toLowerCase().includes(q)
+    (d.user_notes ?? '').toLowerCase().includes(q) ||
+    (d.original_filename ?? '').toLowerCase().includes(q)
   ), [docs, q]);
 
-  // ── Auth loading gate ──────────────────────────────────────────────────────
+  const RECENT_LIMIT = 8;
+  const isSearching = search.length > 0;
+
+  const displayedDocs = useMemo(() => {
+    const base = isSearching ? filtered : docs;
+    const sorted = [...base].sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+    return activeTab === 'recent' && !isSearching ? sorted.slice(0, RECENT_LIMIT) : sorted;
+  }, [docs, filtered, activeTab, isSearching]);
+
+  // ── Auth loading gate ──────────────────────────────────────────────────────────
 
   if (authLoading) {
     return (
@@ -586,8 +664,13 @@ export default function Dashboard() {
   return (
     <SettingsContext.Provider value={ctx}>
       <Head><title>Nayeret.AI</title></Head>
-      <div {...getRootProps()} className="min-h-screen bg-background" dir={lang === 'he' ? 'rtl' : 'ltr'}>
 
+      <div
+        {...getRootProps()}
+        className="min-h-screen bg-background"
+        dir={lang === 'he' ? 'rtl' : 'ltr'}
+        style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}
+      >
         {/* Drag-over overlay */}
         {isDragActive && (
           <div className="fixed inset-0 z-50 bg-zen-sage/20 backdrop-blur-sm flex items-center justify-center pointer-events-none">
@@ -601,7 +684,6 @@ export default function Dashboard() {
 
         <SettingsPanel isOpen={settingsOpen} onClose={() => setSettingsOpen(false)} user={user} onLogout={handleLogout} />
 
-        {/* Tier 1: Duplicate dialog */}
         {tier1Conflict && (
           <DuplicateDialog
             filename={tier1Conflict.filename}
@@ -612,7 +694,6 @@ export default function Dashboard() {
           />
         )}
 
-        {/* Tier 2: Semantic match toasts (show one at a time, never while Tier 1 is blocking) */}
         {semanticNotifications[0] && !tier1Conflict && (
           <SemanticMatchToast
             key={semanticNotifications[0].key}
@@ -625,70 +706,184 @@ export default function Dashboard() {
           />
         )}
 
-        {/* Header (v0 design) */}
-        <header className="flex items-center justify-between px-6 py-4 bg-card border-b border-border">
-          <div className="flex items-center gap-2">
-            <span className="text-2xl font-semibold tracking-tight text-foreground">
-              Nayeret<span className="text-zen-sage">.AI</span>
-            </span>
-            <span className="text-xs text-muted-foreground hidden sm:inline">
-              {lang === 'he' ? 'מנהל מסמכים חכם' : 'AI-powered document manager'}
-            </span>
+        <DocumentDrawer
+          doc={selectedDoc}
+          token={session?.access_token ?? ''}
+          open={!!selectedDoc}
+          onClose={() => setSelectedDoc(null)}
+          onUpdate={handleUpdate}
+          onDelete={handleDelete}
+        />
+
+        {/* ── Header ── */}
+        <motion.header
+          initial={{ opacity: 0, y: -10 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.5 }}
+          className="flex items-center justify-between px-4 py-4 md:px-8"
+        >
+          <div className="flex items-center gap-3">
+            <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-zen-sage">
+              <Shield className="h-5 w-5 text-white" />
+            </div>
+            <div>
+              <h1 className="text-lg font-bold tracking-tight text-foreground">Nayeret.AI</h1>
+              <p className="text-xs text-muted-foreground">{lang === 'he' ? 'הכספת האישית שלך' : 'Your personal vault'}</p>
+            </div>
           </div>
 
-          <div className="flex items-center gap-3">
-            <IngestionHub onFiles={handleFiles} disabled={isUploading} />
-
-            {/* Avatar */}
+          <div className="flex items-center gap-2">
             <div className="w-9 h-9 rounded-full bg-zen-sage/20 flex items-center justify-center text-xs font-medium text-zen-stone overflow-hidden flex-shrink-0">
               {user.user_metadata?.avatar_url && !headerAvatarError ? (
-                <img src={user.user_metadata.avatar_url as string} alt="avatar" className="w-full h-full object-cover" onError={() => setHeaderAvatarError(true)} />
+                <img
+                  src={user.user_metadata.avatar_url as string}
+                  alt="avatar"
+                  className="w-full h-full object-cover"
+                  onError={() => setHeaderAvatarError(true)}
+                />
               ) : initials}
             </div>
-
-            {/* Settings */}
             <button
               onClick={() => setSettingsOpen(true)}
-              className="flex items-center justify-center w-9 h-9 rounded-full bg-secondary text-muted-foreground hover:bg-border transition-colors"
+              className="flex h-9 w-9 items-center justify-center rounded-xl bg-secondary text-muted-foreground transition-colors hover:bg-border hover:text-foreground"
               title={lang === 'he' ? 'הגדרות' : 'Settings'}
             >
-              <Settings className="w-4 h-4" />
+              <Settings className="h-4 w-4" />
             </button>
           </div>
-        </header>
+        </motion.header>
 
-        <main className="max-w-5xl mx-auto px-6 py-6">
-          {/* Summary cards */}
-          {!loadingLibrary && <VaultSummaryBar docs={docs} />}
+        {/* ── Main content ── */}
+        <main className="max-w-2xl mx-auto">
 
-          {/* Search (v0 design) */}
-          <div className={`relative flex items-center bg-card rounded-xl border transition-all duration-300 mb-5 ${searchFocused ? 'border-zen-sage shadow-sm' : 'border-border'}`}>
-            <Search className="w-4 h-4 text-muted-foreground absolute start-4" />
-            <input
-              type="text"
-              value={search}
-              onChange={e => setSearch(e.target.value)}
-              onFocus={() => setSearchFocused(true)}
-              onBlur={() => setSearchFocused(false)}
-              placeholder={lang === 'he' ? 'חיפוש לפי שם קובץ, סוג, או ספק...' : 'Search by filename, type, or provider…'}
-              className="w-full bg-transparent py-3.5 pe-4 ps-10 text-sm text-foreground placeholder:text-muted-foreground outline-none"
-            />
+          <CaptureZone onFiles={handleFiles} isDragActive={isDragActive} lang={lang} />
+
+          {/* IngestionHub — inline below the drop area, matching its width */}
+          <div className="px-4 md:px-8">
+            <IngestionHub queue={uploadQueue} lang={lang} />
           </div>
 
-          {/* Library */}
+          {!loadingLibrary && docs.length > 0 && (
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              transition={{ duration: 0.5, delay: 0.2 }}
+              className="px-4 pt-4 md:px-8"
+            >
+              <VaultSummaryBar docs={docs} />
+            </motion.div>
+          )}
+
           {loadingLibrary ? (
-            <div className="flex flex-col items-center justify-center mt-24 gap-3">
-              <Spinner size="lg" />
-              <p className="text-sm text-muted-foreground">{lang === 'he' ? 'טוען כספת…' : 'Loading vault…'}</p>
-            </div>
-          ) : filtered.length > 0 ? (
-            <VaultTable docs={filtered} token={session?.access_token ?? ''} onDelete={handleDelete} onUpdate={handleUpdate} />
+            <SkeletonCards />
+          ) : docs.length === 0 && !isSearching ? (
+            <EmptyVault lang={lang} onSuggestedSearch={q => { setSearch(q); setActiveTab('all'); }} />
           ) : (
-            <EmptyState isSearch={search.length > 0} />
+            <motion.section
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              transition={{ duration: 0.4, delay: 0.3 }}
+              className="px-4 pb-28 pt-5 md:px-8"
+            >
+              {!isSearching && (
+                <div className="mb-4 flex items-center gap-1 rounded-xl bg-secondary/60 p-1">
+                  {([['recent', lang === 'he' ? 'אחרונים' : 'Recent'], ['all', lang === 'he' ? 'הכל' : 'All']] as ['recent' | 'all', string][]).map(([id, label]) => (
+                    <button
+                      key={id}
+                      onClick={() => setActiveTab(id)}
+                      className={`flex-1 rounded-lg px-3 py-2 text-xs font-semibold transition-all ${
+                        activeTab === id
+                          ? 'bg-card text-foreground shadow-sm'
+                          : 'text-muted-foreground hover:text-foreground'
+                      }`}
+                    >
+                      {label}
+                      {id === 'all' && docs.length > 0 && (
+                        <span className="ms-1.5 rounded-full bg-zen-sage/15 px-1.5 py-0.5 text-[10px] font-bold text-zen-sage">
+                          {docs.length}
+                        </span>
+                      )}
+                    </button>
+                  ))}
+                </div>
+              )}
+
+              {isSearching && (
+                <div className="mb-3">
+                  <h2 className="text-sm font-semibold text-muted-foreground">
+                    {lang === 'he' ? `תוצאות חיפוש (${filtered.length})` : `Search results (${filtered.length})`}
+                  </h2>
+                </div>
+              )}
+
+              {displayedDocs.length > 0 ? (
+                <div className="space-y-3">
+                  <AnimatePresence mode="popLayout">
+                    {displayedDocs.map((doc, i) => (
+                      <VaultCard
+                        key={doc.id}
+                        doc={doc}
+                        index={i}
+                        token={session?.access_token ?? ''}
+                        onDelete={handleDelete}
+                        onUpdate={handleUpdate}
+                        onOpen={setSelectedDoc}
+                      />
+                    ))}
+                  </AnimatePresence>
+                </div>
+              ) : isSearching ? (
+                <EmptySearch lang={lang} />
+              ) : null}
+            </motion.section>
           )}
         </main>
+
+        {/* ── Fixed bottom search bar ── */}
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.5, delay: 0.6 }}
+          className="fixed inset-x-0 bottom-0 z-50 bg-gradient-to-t from-background via-background/95 to-transparent px-4 pt-8"
+          style={{ paddingBottom: 'max(1.25rem, env(safe-area-inset-bottom))' }}
+        >
+          <div className="mx-auto max-w-2xl">
+            <div
+              className={`flex items-center gap-3 rounded-2xl bg-card px-4 py-3 shadow-lg ring-1 transition-shadow ${
+                isSearching
+                  ? 'shadow-xl ring-zen-sage/40'
+                  : 'ring-border/60 focus-within:shadow-xl focus-within:ring-zen-sage/30'
+              }`}
+            >
+              <Search className="h-5 w-5 shrink-0 text-muted-foreground" />
+              <input
+                type="text"
+                value={search}
+                onChange={e => setSearch(e.target.value)}
+                placeholder={lang === 'he' ? 'חפש בכספת...' : 'Search your vault...'}
+                className="flex-1 bg-transparent text-sm text-foreground placeholder:text-muted-foreground/60 focus:outline-none"
+                dir={lang === 'he' ? 'rtl' : 'ltr'}
+              />
+              {isSearching ? (
+                <button
+                  onClick={() => setSearch('')}
+                  className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-secondary text-muted-foreground transition-colors hover:bg-border hover:text-foreground"
+                  aria-label="Clear search"
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              ) : (
+                <button
+                  className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-zen-sage text-white transition-transform hover:scale-105 active:scale-95"
+                  aria-label="AI Search"
+                >
+                  <Sparkles className="h-4 w-4" />
+                </button>
+              )}
+            </div>
+          </div>
+        </motion.div>
       </div>
-      <BulkProgressBar queue={uploadQueue} />
     </SettingsContext.Provider>
   );
 }
