@@ -7,10 +7,61 @@ import {
   callGemini, ocrImage, ocrPdfFallback, describeImage,
   summarizeDocument, classifyDocument, extractMetadata,
 } from '@/lib/services/ai';
+import type { DocumentType } from '@/lib/types';
 
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 // Use lib directly to bypass index.js debug code that breaks under webpack/Next.js
 const pdfParse = require('pdf-parse/lib/pdf-parse.js');
+
+// ── Tier 2: Semantic duplicate detection ──────────────────────────────────────
+
+const SEMANTIC_UNIQUE_FIELDS: Partial<Record<DocumentType, string[]>> = {
+  identification:   ['id_number'],
+  insurance:        ['policy_number'],
+  bill:             ['provider', 'due_date'],
+  receipt:          ['merchant', 'purchase_date'],
+  financial_report: ['total_balance', 'liquidity_date'],
+  claim:            ['policy_number', 'claim_date'],
+};
+
+async function findSemanticDuplicate(
+  userId: string,
+  documentType: DocumentType,
+  rawMetadata: Record<string, unknown>,
+  excludeFileName: string,
+): Promise<{ id: string; file_name: string; document_type: DocumentType } | null> {
+  const fields = SEMANTIC_UNIQUE_FIELDS[documentType];
+  if (!fields) return null;
+
+  const matchFields = fields.filter(f => rawMetadata[f] != null && rawMetadata[f] !== '');
+  if (matchFields.length === 0) return null;
+
+  const { data: candidates } = await supabaseAdmin
+    .from('documents')
+    .select('id, file_name, document_type, raw_analysis')
+    .eq('owner_id', userId)
+    .eq('document_type', documentType)
+    .neq('file_name', excludeFileName);
+
+  if (!candidates?.length) return null;
+
+  for (const candidate of candidates) {
+    const ra = (candidate.raw_analysis as Record<string, unknown>) ?? {};
+    const allMatch = matchFields.every(f => {
+      const a = String(rawMetadata[f] ?? '').toLowerCase().trim();
+      const b = String(ra[f] ?? '').toLowerCase().trim();
+      return a && b && a === b;
+    });
+    if (allMatch) {
+      return {
+        id: candidate.id,
+        file_name: candidate.file_name,
+        document_type: candidate.document_type as DocumentType,
+      };
+    }
+  }
+  return null;
+}
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   if (req.method !== 'POST') {
@@ -24,7 +75,9 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   }
 
   try {
-    const { filename, mimeType: clientMimeType, fileHash, originalFilename } = req.body as { filename: string; mimeType?: string; fileHash?: string; originalFilename?: string };
+    const { filename, mimeType: clientMimeType, fileHash, originalFilename } = req.body as {
+      filename: string; mimeType?: string; fileHash?: string; originalFilename?: string;
+    };
     if (!filename) {
       return res.status(400).json({ error: 'Missing filename' });
     }
@@ -66,6 +119,8 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
             document_type: 'other',
             summary_he: mediaSummaries.he, summary_en: mediaSummaries.en,
             raw_analysis: { is_media: true },
+            ...(fileHash ? { file_hash: fileHash } : {}),
+            ...(originalFilename ? { original_filename: originalFilename } : {}),
           }], { onConflict: 'file_name,owner_id' })
           .select();
         return res.status(200).json({
@@ -75,6 +130,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
           raw_metadata: { is_media: true },
           supabaseId: mediaData?.[0]?.id ?? null,
           is_media: true,
+          semanticMatch: null,
         });
       }
     } else {
@@ -102,7 +158,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       }
     }
 
-    // 2. Triage: is this a real document or a logo/photo/meme?
+    // 3. Triage: is this a real document or a logo/photo/meme?
     const triageResult = await callGemini(
       `Is the following text extracted from a financial, legal, identity, or business document ` +
       `(bill, bank report, insurance policy, receipt, claim, ID, passport, contract)?\n` +
@@ -131,6 +187,8 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
           document_type: 'other',
           summary_he: mediaSummaries.he, summary_en: mediaSummaries.en,
           raw_analysis: { is_media: true },
+          ...(fileHash ? { file_hash: fileHash } : {}),
+          ...(originalFilename ? { original_filename: originalFilename } : {}),
         }], { onConflict: 'file_name,owner_id' })
         .select();
       return res.status(200).json({
@@ -140,33 +198,34 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         raw_metadata: { is_media: true },
         supabaseId: mediaData?.[0]?.id ?? null,
         is_media: true,
+        semanticMatch: null,
       });
     }
 
-    // 3. Bilingual summarization
+    // 4. Bilingual summarization
     const summaries = await summarizeDocument(text);
 
-    // 4. Classify into one of the supported categories
+    // 5. Classify into one of the supported categories
     const document_group = await classifyDocument(summaries.en, text);
     const document_type = toDocumentType(document_group);
 
-    // 5. Extract structured metadata per category
+    // 6. Extract structured metadata per category
     const raw_metadata = await extractMetadata(document_type, text);
 
-    // 6. Persist to Supabase — upsert per (file_name, owner_id) so re-uploads update in place
+    // 7. Persist to Supabase — upsert per (file_name, owner_id) so re-uploads update in place
     const { data: supaData, error: supaError } = await supabaseAdmin
       .from('documents')
       .upsert(
-        [
-          {
-            file_name: filename,
-            owner_id: userId,
-            document_type,
-            summary_he: summaries.he,
-            summary_en: summaries.en,
-            raw_analysis: raw_metadata,
-          },
-        ],
+        [{
+          file_name: filename,
+          owner_id: userId,
+          document_type,
+          summary_he: summaries.he,
+          summary_en: summaries.en,
+          raw_analysis: raw_metadata,
+          ...(fileHash ? { file_hash: fileHash } : {}),
+          ...(originalFilename ? { original_filename: originalFilename } : {}),
+        }],
         { onConflict: 'file_name,owner_id' }
       )
       .select();
@@ -174,6 +233,12 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     if (supaError) {
       console.error('Supabase upsert error:', supaError);
       return res.status(500).json({ error: 'Failed to save to database', details: supaError.message });
+    }
+
+    // 8. Tier 2: Semantic duplicate check (catches duplicates with different filenames)
+    const semanticMatch = await findSemanticDuplicate(userId, document_type, raw_metadata, filename);
+    if (semanticMatch) {
+      console.log('[dedup] Semantic match found:', semanticMatch.id, 'for new doc:', filename);
     }
 
     return res.status(200).json({
@@ -185,6 +250,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       document_type,
       raw_metadata,
       supabaseId: supaData?.[0]?.id ?? null,
+      semanticMatch: semanticMatch ?? null,
     });
   } catch (error) {
     console.error('Analysis error:', error);
