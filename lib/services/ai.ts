@@ -68,7 +68,7 @@ export async function describeImage(fileBuffer: Buffer, mimeType: string): Promi
 export async function summarizeDocument(text: string): Promise<{ he: string; en: string }> {
   const raw = await callGemini(
     `Summarize this document in a maximum of 25 words per language.\n` +
-    `Focus only on: the entity/provider name, the total amount, and any urgent action (e.g. payment due date).\n` +
+    `Focus on: the entity/provider name, the PRIMARY total amount (the grand total for the period, not secondary sub-totals or outstanding installments), and any urgent payment due.\n` +
     `Return a JSON object with exactly two keys:\n` +
     `  "he": the summary in Hebrew (max 25 words)\n` +
     `  "en": the summary in English (max 25 words)\n\n` +
@@ -88,7 +88,13 @@ export async function classifyDocument(summaryEn: string, text: string): Promise
   return callGemini(
     `Classify this document into exactly one of these categories:\n` +
     `Bills, Financial Reports, Insurances, Identification, Receipts, Tax/Insurance Claims, Other\n\n` +
-    `Use "Tax/Insurance Claims" for documents that are insurance claims, tax refund claims, medical reimbursements, or similar claim forms.\n` +
+    `Category definitions:\n` +
+    `- Bills: a single invoice or bill for a specific billing period requesting payment\n` +
+    `- Financial Reports: annual summaries, year-end statements, multi-period account summaries, pension/savings reports, or any document summarising charges or balances across multiple periods\n` +
+    `- Insurances: insurance policies, coverage certificates, or renewal notices\n` +
+    `- Identification: ID cards, passports, driver's licences, or similar identity documents\n` +
+    `- Receipts: proof of a completed payment or purchase transaction\n` +
+    `- Tax/Insurance Claims: insurance claims, tax refund claims, medical reimbursements, or similar claim forms\n\n` +
     `Return only the category name, nothing else.\n\n` +
     `Summary: ${summaryEn}\nDocument: ${text.slice(0, 4000)}`
   );
