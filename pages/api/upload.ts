@@ -1,6 +1,7 @@
 import { NextApiRequest, NextApiResponse } from 'next';
 import { getUserIdFromRequest } from '@/lib/services/auth';
-import { MIME_MAP, ensureBucket, uploadFile } from '@/lib/services/storage';
+import { MIME_MAP, ensureBucket, uploadFile, deleteFile } from '@/lib/services/storage';
+import { supabaseAdmin } from '@/supabase/client';
 
 export const config = {
   api: {
@@ -24,10 +25,53 @@ export default async function handler(
   }
 
   try {
-    const { file, filename } = req.body;
+    const { file, filename, fileHash, force } = req.body as {
+      file: string;
+      filename: string;
+      fileHash?: string;
+      force?: boolean;
+    };
 
     if (!file || !filename) {
       return res.status(400).json({ error: 'Missing file or filename' });
+    }
+
+    // ── Tier 1: Byte-level duplicate check ──────────────────────────────────────────
+    if (fileHash && !force) {
+      const { data: existing } = await supabaseAdmin
+        .from('documents')
+        .select('id, file_name, document_type, thumbnail_url')
+        .eq('owner_id', userId)
+        .eq('file_hash', fileHash)
+        .maybeSingle();
+
+      if (existing) {
+        return res.status(200).json({
+          isDuplicate: true,
+          existingDoc: {
+            id: existing.id,
+            file_name: existing.file_name,
+            document_type: existing.document_type,
+            thumbnail_url: existing.thumbnail_url ?? null,
+          },
+        });
+      }
+    }
+
+    // ── If force=true, delete the old document with the same hash ─────────────────────
+    if (fileHash && force) {
+      const { data: oldDoc } = await supabaseAdmin
+        .from('documents')
+        .select('id, file_name, owner_id')
+        .eq('owner_id', userId)
+        .eq('file_hash', fileHash)
+        .maybeSingle();
+
+      if (oldDoc) {
+        await supabaseAdmin.from('documents').delete().eq('id', oldDoc.id);
+        await deleteFile('documents', `${userId}/${oldDoc.file_name}`);
+        await deleteFile('thumbnails', `${userId}/${oldDoc.id}.jpg`);
+      }
     }
 
     const ext = filename.split('.').pop()?.toLowerCase() ?? '';
@@ -41,7 +85,7 @@ export default async function handler(
     const storagePath = `${userId}/${filename}`;
     await uploadFile('documents', storagePath, buffer, mimeType);
 
-    return res.status(200).json({ success: true, message: `File ${filename} uploaded successfully` });
+    return res.status(200).json({ isDuplicate: false, success: true });
   } catch (error) {
     console.error('Upload error:', error);
     return res.status(500).json({

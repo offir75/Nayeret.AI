@@ -20,6 +20,29 @@ export interface UpdateDocumentPayload {
   user_notes?: string;
   document_type?: DocumentType;
   raw_analysis?: Record<string, unknown>;
+  summary_he?: string;
+  summary_en?: string;
+}
+
+// ─── Deduplication ────────────────────────────────────────────────────────────
+
+export interface DuplicateDocInfo {
+  id: string;
+  file_name: string;
+  document_type: DocumentType;
+  thumbnail_url: string | null;
+}
+
+export interface SemanticMatchInfo {
+  id: string;
+  file_name: string;
+  document_type: DocumentType;
+}
+
+export interface UploadApiResponse {
+  isDuplicate: boolean;
+  existingDoc?: DuplicateDocInfo;
+  success?: boolean;
 }
 
 export interface AppSettings {
@@ -47,6 +70,7 @@ export interface AnalyzeApiResponse {
   raw_metadata: Record<string, unknown> | null;
   supabaseId: string | null;
   is_media?: boolean;
+  semanticMatch?: SemanticMatchInfo | null;
 }
 
 export interface DocumentsApiResponse {

@@ -32,21 +32,28 @@ export async function deleteDocument(id: string, accessToken: string): Promise<v
   }
 }
 
-export async function uploadFileApi(filename: string, base64: string, accessToken: string): Promise<void> {
+export async function uploadFileApi(
+  filename: string,
+  base64: string,
+  accessToken: string,
+  fileHash?: string,
+  force?: boolean,
+): Promise<import('@/lib/types').UploadApiResponse> {
   const res = await apiFetch('/api/upload', {
     method: 'POST',
-    body: JSON.stringify({ file: base64, filename }),
+    body: JSON.stringify({ file: base64, filename, fileHash, force }),
   }, accessToken);
   if (!res.ok) {
     const err = await res.json().catch(() => ({})) as { error?: string };
     throw new Error(err.error ?? 'Upload failed');
   }
+  return res.json() as Promise<import('@/lib/types').UploadApiResponse>;
 }
 
-export async function analyzeFileApi(filename: string, mimeType: string, accessToken: string): Promise<AnalyzeApiResponse> {
+export async function analyzeFileApi(filename: string, mimeType: string, accessToken: string, fileHash?: string): Promise<AnalyzeApiResponse> {
   const res = await apiFetch('/api/analyze', {
     method: 'POST',
-    body: JSON.stringify({ filename, mimeType }),
+    body: JSON.stringify({ filename, mimeType, fileHash }),
   }, accessToken);
   const data = await res.json() as AnalyzeApiResponse & { error?: string };
   if (!res.ok || !data.success) throw new Error(data.error ?? 'Analysis failed');
@@ -55,7 +62,7 @@ export async function analyzeFileApi(filename: string, mimeType: string, accessT
 
 export async function updateDocument(
   id: string,
-  patch: { user_notes?: string; document_type?: string; raw_analysis?: Record<string, unknown> },
+  patch: { user_notes?: string; document_type?: string; raw_analysis?: Record<string, unknown>; summary_he?: string; summary_en?: string },
   accessToken: string,
 ): Promise<import('@/lib/types').VaultDoc> {
   const res = await apiFetch('/api/documents', {

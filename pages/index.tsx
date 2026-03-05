@@ -10,13 +10,13 @@ import type { User, Session } from '@supabase/supabase-js';
 import { translations } from '@/lib/vault/translations';
 import { SettingsContext, useSettings } from '@/lib/context/settings';
 import type { SettingsCtx } from '@/lib/context/settings';
-import type { VaultDoc, UploadJob, AppSettings, Lang, Currency, SortCol } from '@/lib/types';
+import type { VaultDoc, UploadJob, AppSettings, Lang, Currency, SortCol, DuplicateDocInfo, SemanticMatchInfo } from '@/lib/types';
 import {
   isSupportedFile, resolveFilename, readFileAsBase64,
-  normalizeImageFile, renderPdfThumbnail, renderImageThumbnail,
+  normalizeImageFile, renderPdfThumbnail, renderImageThumbnail, computeFileHash,
 } from '@/lib/vault/helpers';
-import { fetchDocuments, uploadFileApi, analyzeFileApi, saveThumbnailApi } from '@/lib/services/documents';
-import { VaultSummaryBar, BulkProgressBar, IngestionHub, DocumentRow } from '@/components/vault';
+import { fetchDocuments, uploadFileApi, analyzeFileApi, saveThumbnailApi, deleteDocument, updateDocument } from '@/lib/services/documents';
+import { VaultSummaryBar, BulkProgressBar, IngestionHub, DocumentRow, DuplicateDialog, SemanticMatchToast } from '@/components/vault';
 
 // ─── Spinner ──────────────────────────────────────────────────────────────────
 
@@ -349,6 +349,19 @@ export default function Dashboard() {
   const [search, setSearch] = useState('');
   const [searchFocused, setSearchFocused] = useState(false);
 
+  // ── Deduplication state ─────────────────────────────────────────────────────────────────────────────
+  const [tier1Conflict, setTier1Conflict] = useState<{
+    filename: string;
+    existing: DuplicateDocInfo;
+    resolve: (action: 'view' | 'replace' | 'cancel') => void;
+  } | null>(null);
+  const [semanticNotifications, setSemanticNotifications] = useState<{
+    key: string;
+    match: SemanticMatchInfo;
+    newDocId: string;
+    newDocData: Partial<VaultDoc>;
+  }[]>([]);
+
   // ── Auth ───────────────────────────────────────────────────────────────────
 
   useEffect(() => {
@@ -436,9 +449,25 @@ export default function Dashboard() {
 
         const base64 = await readFileAsBase64(normalizedFile);
 
-        await uploadFileApi(normalizedName, base64, token);
+        const fileHash = await computeFileHash(normalizedFile);
 
-        const d = await analyzeFileApi(normalizedName, normalizedFile.type, token);
+        // Tier 1: Check for byte-level duplicate
+        const uploadResult = await uploadFileApi(normalizedName, base64, token, fileHash);
+        if (uploadResult.isDuplicate && uploadResult.existingDoc) {
+          const action = await new Promise<'view' | 'replace' | 'cancel'>(resolve => {
+            setTier1Conflict({ filename: normalizedName, existing: uploadResult.existingDoc!, resolve });
+          });
+          setTier1Conflict(null);
+          if (action === 'cancel' || action === 'view') {
+            setUploadQueue(prev => prev.map(j => j.id === job.id ? { ...j, status: 'done' } : j));
+            continue;
+          }
+          // replace: re-upload with force=true (deletes old doc server-side)
+          await uploadFileApi(normalizedName, base64, token, fileHash, true);
+          setDocs(prev => prev.filter(d => d.id !== uploadResult.existingDoc!.id));
+        }
+
+        const d = await analyzeFileApi(normalizedName, normalizedFile.type, token, fileHash);
 
         const supabaseId: string = d.supabaseId ?? '';
         const newDoc: VaultDoc = {
@@ -454,6 +483,21 @@ export default function Dashboard() {
         };
         setDocs(prev => [newDoc, ...prev.filter(p => p.id !== supabaseId)]);
         setUploadQueue(prev => prev.map(j => j.id === job.id ? { ...j, status: 'done' } : j));
+
+        // Tier 2: Show semantic match toast
+        if (d.semanticMatch) {
+          setSemanticNotifications(prev => [...prev, {
+            key: Math.random().toString(36).slice(2),
+            match: d.semanticMatch!,
+            newDocId: supabaseId,
+            newDocData: {
+              document_type: newDoc.document_type,
+              raw_analysis: newDoc.raw_analysis,
+              summary_he: newDoc.summary_he,
+              summary_en: newDoc.summary_en,
+            },
+          }]);
+        }
 
         if (supabaseId) {
           const ext = normalizedName.split('.').pop()?.toLowerCase() ?? '';
@@ -474,6 +518,28 @@ export default function Dashboard() {
 
     const jobIds = new Set(jobs.map(j => j.id));
     setTimeout(() => setUploadQueue(prev => prev.filter(j => !jobIds.has(j.id))), 4000);
+  };
+
+  const dismissSemanticNotification = (key: string) => {
+    setSemanticNotifications(prev => prev.filter(n => n.key !== key));
+  };
+
+  const handleSemanticMerge = async (key: string, matchId: string, newDocId: string, patchData: Partial<VaultDoc>) => {
+    dismissSemanticNotification(key);
+    if (!session) return;
+    const token = session.access_token;
+    try {
+      const patch: Parameters<typeof updateDocument>[1] = {};
+      if (patchData.document_type) patch.document_type = patchData.document_type;
+      if (patchData.raw_analysis) patch.raw_analysis = patchData.raw_analysis as Record<string, unknown>;
+      if (patchData.summary_he != null) patch.summary_he = patchData.summary_he;
+      if (patchData.summary_en != null) patch.summary_en = patchData.summary_en;
+      const updated = await updateDocument(matchId, patch, token);
+      await deleteDocument(newDocId, token);
+      setDocs(prev => [updated, ...prev.filter(d => d.id !== matchId && d.id !== newDocId)]);
+    } catch {
+      // Silently fail — user keeps both
+    }
   };
 
   const { getRootProps, isDragActive } = useDropzone({
@@ -533,6 +599,30 @@ export default function Dashboard() {
         )}
 
         <SettingsPanel isOpen={settingsOpen} onClose={() => setSettingsOpen(false)} user={user} onLogout={handleLogout} />
+
+        {/* Tier 1: Duplicate dialog */}
+        {tier1Conflict && (
+          <DuplicateDialog
+            filename={tier1Conflict.filename}
+            existing={tier1Conflict.existing}
+            onViewOriginal={() => tier1Conflict.resolve('view')}
+            onReplace={() => tier1Conflict.resolve('replace')}
+            onCancel={() => tier1Conflict.resolve('cancel')}
+          />
+        )}
+
+        {/* Tier 2: Semantic match toasts (show one at a time) */}
+        {semanticNotifications[0] && (
+          <SemanticMatchToast
+            key={semanticNotifications[0].key}
+            match={semanticNotifications[0].match}
+            newDocId={semanticNotifications[0].newDocId}
+            onUpdateExisting={(matchId, newDocId) =>
+              handleSemanticMerge(semanticNotifications[0].key, matchId, newDocId, semanticNotifications[0].newDocData)
+            }
+            onKeepBoth={() => dismissSemanticNotification(semanticNotifications[0].key)}
+          />
+        )}
 
         {/* Header (v0 design) */}
         <header className="flex items-center justify-between px-6 py-4 bg-card border-b border-border">

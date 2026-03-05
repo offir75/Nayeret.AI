@@ -24,7 +24,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   }
 
   try {
-    const { filename, mimeType: clientMimeType } = req.body;
+    const { filename, mimeType: clientMimeType, fileHash } = req.body as { filename: string; mimeType?: string; fileHash?: string };
     if (!filename) {
       return res.status(400).json({ error: 'Missing filename' });
     }

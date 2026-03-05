@@ -4,5 +4,7 @@ export { default as VaultSummaryBar } from './VaultSummaryBar';
 export { default as BulkProgressBar } from './BulkProgressBar';
 export { default as IngestionHub } from './IngestionHub';
 export { default as ConfirmDialog } from './ConfirmDialog';
+export { default as DuplicateDialog } from './DuplicateDialog';
+export { default as SemanticMatchToast } from './SemanticMatchToast';
 export { default as DocumentModal } from './DocumentModal';
 export { DocumentRow } from './DocumentRow';

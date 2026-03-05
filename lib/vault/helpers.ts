@@ -72,6 +72,16 @@ export function isLiquid(doc: VaultDoc): boolean {
   return !isNaN(date.getTime()) && date <= new Date();
 }
 
+// ─── File hash (SHA-256, browser only) ───────────────────────────────────────
+
+export async function computeFileHash(file: File): Promise<string> {
+  const buffer = await file.arrayBuffer();
+  const hashBuffer = await crypto.subtle.digest('SHA-256', buffer);
+  return Array.from(new Uint8Array(hashBuffer))
+    .map(b => b.toString(16).padStart(2, '0'))
+    .join('');
+}
+
 // ─── Sensitive-key list (Privacy Mode) ───────────────────────────────────────
 
 export const SENSITIVE_KEYS = new Set([

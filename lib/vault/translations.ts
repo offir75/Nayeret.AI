@@ -63,4 +63,14 @@ export const translations = {
   saveError:           { en: 'Save failed',                        he: 'שמירה נכשלה'                    },
   userNotes:           { en: 'Notes',                              he: 'הערות'                          },
   userNotesPlaceholder:{ en: 'Add context, TODOs, or reminders…', he: 'הוסף הקשר, משימות, או תזכורות…' },
+  // ── Deduplication ─────────────────────────────────────────────────────────
+  dupDetectedTitle:    { en: 'Duplicate Detected',          he: 'כפילות זוהתה'              },
+  dupDetectedBody:     { en: 'This file has already been uploaded.',  he: 'קובץ זה כבר הועלה בעבר.'   },
+  dupViewOriginal:     { en: 'View Original',               he: 'צפה במקור'                },
+  dupReplace:          { en: 'Replace Original',            he: 'החלף את המקור'             },
+  dupCancel:           { en: 'Cancel',                      he: 'ביטול'                    },
+  semanticMatchTitle:  { en: 'Similar Document Found',      he: 'נמצא מסמך דומה'            },
+  semanticMatchBody:   { en: 'A document with matching key fields already exists.',  he: 'קיים מסמך עם שדות זהים.' },
+  semanticUpdateExisting: { en: 'Update Existing',          he: 'עדכן קיים'                },
+  semanticKeepBoth:    { en: 'Keep Both',                   he: 'שמור שניהם'               },
 };
