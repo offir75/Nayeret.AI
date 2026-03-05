@@ -11,6 +11,7 @@ interface Props {
 
 export default function SemanticMatchToast({ match, newDocId, onUpdateExisting, onKeepBoth }: Props) {
   const { lang } = useSettings();
+  const displayName = match.original_filename ?? match.file_name;
 
   return (
     <div
@@ -39,7 +40,7 @@ export default function SemanticMatchToast({ match, newDocId, onUpdateExisting, 
         <div className="bg-zinc-800 rounded-lg px-3 py-2.5 mb-5">
           <div className="flex items-center gap-2 text-xs">
             <span className="flex-shrink-0 text-white/40">↗</span>
-            <span className="truncate text-zen-sage/80" title={match.file_name}>{match.file_name}</span>
+            <span className="truncate text-white/80" title={displayName}>{displayName}</span>
           </div>
         </div>
 

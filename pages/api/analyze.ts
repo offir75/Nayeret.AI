@@ -29,7 +29,7 @@ async function findSemanticDuplicate(
   documentType: DocumentType,
   rawMetadata: Record<string, unknown>,
   excludeFileName: string,
-): Promise<{ id: string; file_name: string; document_type: DocumentType } | null> {
+): Promise<{ id: string; file_name: string; original_filename: string | null; document_type: DocumentType } | null> {
   const fields = SEMANTIC_UNIQUE_FIELDS[documentType];
   if (!fields) return null;
 
@@ -38,7 +38,7 @@ async function findSemanticDuplicate(
 
   const { data: candidates } = await supabaseAdmin
     .from('documents')
-    .select('id, file_name, document_type, raw_analysis')
+    .select('id, file_name, original_filename, document_type, raw_analysis')
     .eq('owner_id', userId)
     .eq('document_type', documentType)
     .neq('file_name', excludeFileName);
@@ -56,6 +56,7 @@ async function findSemanticDuplicate(
       return {
         id: candidate.id,
         file_name: candidate.file_name,
+        original_filename: (candidate.original_filename as string | null) ?? null,
         document_type: candidate.document_type as DocumentType,
       };
     }

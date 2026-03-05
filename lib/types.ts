@@ -37,6 +37,7 @@ export interface DuplicateDocInfo {
 export interface SemanticMatchInfo {
   id: string;
   file_name: string;
+  original_filename: string | null;
   document_type: DocumentType;
 }
 
