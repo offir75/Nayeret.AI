@@ -1,4 +1,3 @@
-import { useEffect } from 'react';
 import { useSettings } from '@/lib/context/settings';
 import { translations } from '@/lib/vault/translations';
 import type { SemanticMatchInfo } from '@/lib/types';
@@ -13,47 +12,51 @@ interface Props {
 export default function SemanticMatchToast({ match, newDocId, onUpdateExisting, onKeepBoth }: Props) {
   const { lang } = useSettings();
 
-  // Auto-dismiss after 12 seconds if user takes no action
-  useEffect(() => {
-    const timer = setTimeout(onKeepBoth, 12000);
-    return () => clearTimeout(timer);
-  }, [onKeepBoth]);
-
   return (
-    <div className="fixed bottom-6 inset-x-0 flex justify-center z-[65] px-4 pointer-events-none">
+    <div
+      className="fixed inset-0 z-[70] flex items-center justify-center bg-black/50 backdrop-blur-sm"
+      onClick={onKeepBoth}
+    >
       <div
-        className="bg-zinc-800 border border-white/10 rounded-xl shadow-xl px-4 py-3 max-w-sm w-full pointer-events-auto"
+        className="bg-zinc-900 border border-white/10 rounded-2xl shadow-2xl p-6 max-w-sm w-full mx-4"
         dir={lang === 'he' ? 'rtl' : 'ltr'}
+        onClick={e => e.stopPropagation()}
       >
-        <div className="flex items-start gap-3">
-          {/* Icon */}
-          <div className="w-8 h-8 rounded-full bg-blue-500/15 flex items-center justify-center flex-shrink-0 mt-0.5">
-            <svg className="w-4 h-4 text-blue-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+        {/* Icon + Title */}
+        <div className="flex items-start gap-3 mb-4">
+          <div className="w-10 h-10 rounded-full bg-blue-500/15 flex items-center justify-center flex-shrink-0 mt-0.5">
+            <svg className="w-5 h-5 text-blue-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
               <path strokeLinecap="round" strokeLinejoin="round" d="m21 21-5.197-5.197m0 0A7.5 7.5 0 1 0 5.196 5.196a7.5 7.5 0 0 0 10.607 10.607Z" />
             </svg>
           </div>
-
-          {/* Text + actions */}
-          <div className="flex-1 min-w-0">
-            <p className="text-xs font-semibold text-white">{translations.semanticMatchTitle[lang]}</p>
-            <p className="text-[11px] text-white/50 mt-0.5 mb-2.5 truncate" title={match.file_name}>
-              {translations.semanticMatchBody[lang]} &ldquo;{match.file_name}&rdquo;
-            </p>
-            <div className="flex gap-2">
-              <button
-                onClick={() => onUpdateExisting(match.id, newDocId)}
-                className="flex-1 py-1.5 px-3 rounded-lg text-xs font-medium bg-blue-500/20 hover:bg-blue-500/30 text-blue-300 border border-blue-500/30 transition-colors"
-              >
-                {translations.semanticUpdateExisting[lang]}
-              </button>
-              <button
-                onClick={onKeepBoth}
-                className="flex-1 py-1.5 px-3 rounded-lg text-xs font-medium bg-zinc-700 hover:bg-zinc-600 text-white/70 transition-colors"
-              >
-                {translations.semanticKeepBoth[lang]}
-              </button>
-            </div>
+          <div className="min-w-0">
+            <h3 className="text-sm font-semibold text-white">{translations.semanticMatchTitle[lang]}</h3>
+            <p className="text-xs text-white/50 mt-0.5">{translations.semanticMatchBody[lang]}</p>
           </div>
+        </div>
+
+        {/* Matching file name */}
+        <div className="bg-zinc-800 rounded-lg px-3 py-2.5 mb-5">
+          <div className="flex items-center gap-2 text-xs">
+            <span className="flex-shrink-0 text-white/40">↗</span>
+            <span className="truncate text-zen-sage/80" title={match.file_name}>{match.file_name}</span>
+          </div>
+        </div>
+
+        {/* Actions */}
+        <div className="flex flex-col gap-2">
+          <button
+            onClick={() => onUpdateExisting(match.id, newDocId)}
+            className="w-full py-2 px-4 rounded-lg text-sm font-medium bg-blue-500/20 hover:bg-blue-500/30 text-blue-300 border border-blue-500/30 transition-colors"
+          >
+            {translations.semanticUpdateExisting[lang]}
+          </button>
+          <button
+            onClick={onKeepBoth}
+            className="w-full py-2 px-4 rounded-lg text-sm font-medium text-white/40 hover:text-white/60 transition-colors"
+          >
+            {translations.semanticKeepBoth[lang]}
+          </button>
         </div>
       </div>
     </div>
