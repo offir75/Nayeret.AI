@@ -1,5 +1,7 @@
 import { NextApiRequest, NextApiResponse } from 'next';
 import { supabaseAdmin } from '@/supabase/client';
+import { getUserIdFromRequest } from '@/lib/services/auth';
+import { ensureBucket, uploadFile, getPublicUrl } from '@/lib/services/storage';
 
 export const config = {
   api: {
@@ -9,21 +11,12 @@ export const config = {
   },
 };
 
-async function getUserId(req: NextApiRequest): Promise<string | null> {
-  const auth = req.headers.authorization;
-  if (!auth?.startsWith('Bearer ')) return null;
-  const token = auth.slice(7);
-  const { data: { user }, error } = await supabaseAdmin.auth.getUser(token);
-  if (error || !user) return null;
-  return user.id;
-}
-
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   if (req.method !== 'POST') {
     return res.status(405).json({ error: 'Method not allowed' });
   }
 
-  const userId = await getUserId(req);
+  const userId = await getUserIdFromRequest(req);
   if (!userId) {
     return res.status(401).json({ error: 'Unauthorized — please sign in' });
   }
@@ -49,11 +42,11 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   }
 
   // Ensure the thumbnails bucket exists (idempotent)
-  const { error: bucketError } = await supabaseAdmin.storage
-    .createBucket('thumbnails', { public: true });
-  if (bucketError && !bucketError.message.toLowerCase().includes('already exists')) {
-    console.error('Bucket creation error:', bucketError);
-    return res.status(500).json({ error: 'Storage setup failed', details: bucketError.message });
+  try {
+    await ensureBucket('thumbnails', true);
+  } catch (bucketErr) {
+    console.error('Bucket creation error:', bucketErr);
+    return res.status(500).json({ error: 'Storage setup failed', details: String(bucketErr) });
   }
 
   // Convert base64 to buffer (strip data URL prefix if present)
@@ -62,19 +55,15 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
   // Upload: thumbnails/{userId}/{documentId}.jpg
   const storagePath = `${userId}/${documentId}.jpg`;
-  const { error: uploadError } = await supabaseAdmin.storage
-    .from('thumbnails')
-    .upload(storagePath, buffer, { contentType: 'image/jpeg', upsert: true });
-
-  if (uploadError) {
-    console.error('Storage upload error:', uploadError);
-    return res.status(500).json({ error: 'Failed to upload thumbnail', details: uploadError.message });
+  try {
+    await uploadFile('thumbnails', storagePath, buffer, 'image/jpeg');
+  } catch (uploadErr) {
+    console.error('Storage upload error:', uploadErr);
+    return res.status(500).json({ error: 'Failed to upload thumbnail', details: String(uploadErr) });
   }
 
   // Get the public URL
-  const { data: { publicUrl } } = supabaseAdmin.storage
-    .from('thumbnails')
-    .getPublicUrl(storagePath);
+  const publicUrl = getPublicUrl('thumbnails', storagePath);
 
   // Persist the URL on the document row
   const { error: updateError } = await supabaseAdmin

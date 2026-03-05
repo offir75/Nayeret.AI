@@ -1,5 +1,6 @@
 import { NextApiRequest, NextApiResponse } from 'next';
-import { supabaseAdmin } from '@/supabase/client';
+import { getUserIdFromRequest } from '@/lib/services/auth';
+import { MIME_MAP, ensureBucket, uploadFile } from '@/lib/services/storage';
 
 export const config = {
   api: {
@@ -9,26 +10,6 @@ export const config = {
   },
 };
 
-const MIME_MAP: Record<string, string> = {
-  pdf:  'application/pdf',
-  png:  'image/png',
-  jpg:  'image/jpeg',
-  jpeg: 'image/jpeg',
-  tiff: 'image/tiff',
-  bmp:  'image/bmp',
-  heic: 'image/heic',
-  heif: 'image/heif',
-};
-
-async function getUserId(req: NextApiRequest): Promise<string | null> {
-  const auth = req.headers.authorization;
-  if (!auth?.startsWith('Bearer ')) return null;
-  const token = auth.slice(7);
-  const { data: { user }, error } = await supabaseAdmin.auth.getUser(token);
-  if (error || !user) return null;
-  return user.id;
-}
-
 export default async function handler(
   req: NextApiRequest,
   res: NextApiResponse
@@ -37,7 +18,7 @@ export default async function handler(
     return res.status(405).json({ error: 'Method not allowed' });
   }
 
-  const userId = await getUserId(req);
+  const userId = await getUserIdFromRequest(req);
   if (!userId) {
     return res.status(401).json({ error: 'Unauthorized — please sign in' });
   }
@@ -54,21 +35,11 @@ export default async function handler(
     const buffer = Buffer.from(file, 'base64');
 
     // Ensure the documents bucket exists (idempotent)
-    const { error: bucketError } = await supabaseAdmin.storage
-      .createBucket('documents', { public: false });
-    if (bucketError && !bucketError.message.toLowerCase().includes('already exists')) {
-      return res.status(500).json({ error: 'Storage setup failed', details: bucketError.message });
-    }
+    await ensureBucket('documents', false);
 
     // Upload to Supabase Storage: documents/{userId}/{filename}
     const storagePath = `${userId}/${filename}`;
-    const { error: uploadError } = await supabaseAdmin.storage
-      .from('documents')
-      .upload(storagePath, buffer, { contentType: mimeType, upsert: true });
-
-    if (uploadError) {
-      return res.status(500).json({ error: 'Failed to upload file', details: uploadError.message });
-    }
+    await uploadFile('documents', storagePath, buffer, mimeType);
 
     return res.status(200).json({ success: true, message: `File ${filename} uploaded successfully` });
   } catch (error) {

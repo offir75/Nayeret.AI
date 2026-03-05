@@ -1,19 +1,11 @@
 import { NextApiRequest, NextApiResponse } from 'next';
 import { supabaseAdmin } from '@/supabase/client';
-
-/** Extract and validate the caller's user ID from the Authorization header. */
-async function getUserId(req: NextApiRequest): Promise<string | null> {
-  const auth = req.headers.authorization;
-  if (!auth?.startsWith('Bearer ')) return null;
-  const token = auth.slice(7);
-  const { data: { user }, error } = await supabaseAdmin.auth.getUser(token);
-  if (error || !user) return null;
-  return user.id;
-}
+import { getUserIdFromRequest } from '@/lib/services/auth';
+import { deleteFile } from '@/lib/services/storage';
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   // ── Auth ──────────────────────────────────────────────────────────────────
-  const userId = await getUserId(req);
+  const userId = await getUserIdFromRequest(req);
   if (!userId) {
     return res.status(401).json({ error: 'Unauthorized — please sign in' });
   }
@@ -62,16 +54,10 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     }
 
     // Remove the file from Supabase Storage (best-effort, don't fail if missing)
-    await supabaseAdmin.storage
-      .from('documents')
-      .remove([`${doc.owner_id}/${doc.file_name}`])
-      .catch(() => null);
+    await deleteFile('documents', `${doc.owner_id}/${doc.file_name}`);
 
     // Remove thumbnail from Supabase Storage (best-effort)
-    await supabaseAdmin.storage
-      .from('thumbnails')
-      .remove([`${doc.owner_id}/${id}.jpg`])
-      .catch(() => null);
+    await deleteFile('thumbnails', `${doc.owner_id}/${id}.jpg`);
 
     return res.status(200).json({ success: true });
   }
