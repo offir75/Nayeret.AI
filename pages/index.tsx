@@ -612,8 +612,8 @@ export default function Dashboard() {
           />
         )}
 
-        {/* Tier 2: Semantic match toasts (show one at a time) */}
-        {semanticNotifications[0] && (
+        {/* Tier 2: Semantic match toasts (show one at a time, never while Tier 1 is blocking) */}
+        {semanticNotifications[0] && !tier1Conflict && (
           <SemanticMatchToast
             key={semanticNotifications[0].key}
             match={semanticNotifications[0].match}
