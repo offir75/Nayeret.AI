@@ -22,7 +22,7 @@ export const translations = {
   analyzing:      { en: 'Analyzing…',      he: 'מנתח…'            },
   progressFailed: { en: 'Failed:',         he: 'נכשל:'            },
   addDocuments: { en: 'Add Documents', he: 'הוסף מסמכים' },
-  viewerLoading: { en: 'Please wait while loading…', he: 'אנא המתן בזמן הטעינה…' },
+  viewerLoading: { en: 'Loading document…', he: 'טוען מסמך…' },
   closeViewer:   { en: 'Close',                       he: 'סגור'                  },
   selectFiles:  { en: 'Select Files',    he: 'בחר קבצים'      },
   selectFolder: { en: 'Select Folder',   he: 'בחר תיקייה'     },
