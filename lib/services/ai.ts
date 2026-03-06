@@ -102,10 +102,19 @@ export async function classifyDocument(summaryEn: string, text: string): Promise
 
 // ── Two-Pass DB-driven extraction ─────────────────────────────────────────────
 
+export interface ExtractionField {
+  description: string;
+  data_type: 'string' | 'date' | 'currency_amount';
+  required?: boolean;
+}
+
 export interface DocumentTypeRow {
   name: string;
   matching_description: string | null;
-  schema_definition: { fields?: string[] } & Record<string, unknown>;
+  schema_definition: {
+    fields?: string[];
+    extraction_schema?: Record<string, ExtractionField>;
+  } & Record<string, unknown>;
 }
 
 /**
@@ -133,49 +142,76 @@ export async function classifyAgainstTypes(
   return match ? match.name : 'Other';
 }
 
+/** Map extraction_schema data_type to Gemini SchemaType */
+function toGeminiType(dataType: string): SchemaType {
+  if (dataType === 'currency_amount') return SchemaType.NUMBER;
+  return SchemaType.STRING; // 'string', 'date', and anything else
+}
+
+/** Enrich description with format hints */
+function fieldHint(field: ExtractionField): string {
+  let desc = field.description || '';
+  if (field.data_type === 'date') desc += ' (format: YYYY-MM-DD)';
+  if (field.data_type === 'currency_amount') desc += ' (plain number, no currency symbol or commas)';
+  return desc;
+}
+
 /**
- * Phase 2 — extract structured fields defined by the matched type's schema_definition.
- * Uses Gemini's native JSON response schema when possible; falls back to prompt-based.
+ * Phase 2 — extract structured fields using the full extraction_schema from the DB taxonomy.
+ * Accepts the rich schema object (with descriptions and data_types) for precise Gemini mapping.
+ * Falls back gracefully to a flat field-name list for legacy rows.
  */
 export async function extractStructured(
   text: string,
-  fields: string[],
+  schema: Record<string, ExtractionField> | string[],
 ): Promise<Record<string, unknown>> {
-  if (fields.length === 0) return {};
+  // Normalise: convert legacy string[] to minimal ExtractionField objects
+  const normalised: Record<string, ExtractionField> = Array.isArray(schema)
+    ? Object.fromEntries(schema.map(f => [f, { description: f, data_type: 'string' as const }]))
+    : schema;
 
-  // Build a dynamic response schema: all fields are nullable strings
+  const entries = Object.entries(normalised);
+  if (entries.length === 0) return {};
+
+  // Build Gemini response schema with per-field types + descriptions
   const schemaProperties = Object.fromEntries(
-    fields.map(f => [f, { type: SchemaType.STRING, nullable: true }])
+    entries.map(([key, field]) => [key, {
+      type: toGeminiType(field.data_type),
+      description: fieldHint(field),
+      nullable: true,
+    }])
   );
+
+  // Build a human-readable field list for the prompt
+  const fieldList = entries
+    .map(([key, field]) => `- ${key}: ${fieldHint(field)}`)
+    .join('\n');
+
+  const instruction =
+    'Extract the following fields from the document text.\n' +
+    'Important: if the document is in Hebrew, return Hebrew text for string fields ' +
+    '(e.g. issuer names, full names, locations).\n' +
+    'Use null for any field not present in the document.\n' +
+    'Dates must be in YYYY-MM-DD format. Amounts must be plain numbers (no symbols or commas).\n\n' +
+    `Fields:\n${fieldList}\n\nDocument:\n${text.slice(0, 6000)}`;
 
   try {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const result = await (model as any).generateContent({
-      contents: [{
-        role: 'user',
-        parts: [{ text:
-          `Extract the following fields from the document. ` +
-          `Use null for any field not found. ` +
-          `Dates must be YYYY-MM-DD. Amounts must be plain numbers (no currency symbols).\n\n` +
-          `Fields to extract: ${fields.join(', ')}\n\n` +
-          `Document:\n${text.slice(0, 6000)}`,
-        }],
-      }],
+      contents: [{ role: 'user', parts: [{ text: instruction }] }],
       generationConfig: {
         responseMimeType: 'application/json',
-        responseSchema: {
-          type: SchemaType.OBJECT,
-          properties: schemaProperties,
-        },
+        responseSchema: { type: SchemaType.OBJECT, properties: schemaProperties },
       },
     });
     return JSON.parse(result.response.text()) as Record<string, unknown>;
   } catch (err) {
     console.warn('[extractStructured] Structured output failed, using prompt fallback:', String(err));
     const raw = await callGemini(
-      `Extract these fields as a JSON object: ${fields.join(', ')}\n` +
+      `Extract the following fields as a JSON object. ` +
+      `Return Hebrew text for string fields if the document is in Hebrew. ` +
       `Use null for missing fields. Dates in YYYY-MM-DD. Amounts as numbers.\n\n` +
-      `Document:\n${text.slice(0, 6000)}`,
+      `Fields:\n${fieldList}\n\nDocument:\n${text.slice(0, 6000)}`,
       true
     );
     try { return JSON.parse(raw) as Record<string, unknown>; } catch { return {}; }

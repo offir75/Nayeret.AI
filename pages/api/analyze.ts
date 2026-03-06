@@ -267,12 +267,15 @@ ${text.slice(0, 1000)}`,
 
     const document_type = nameToDocumentType(matchedTypeName);
 
-    // 6. PHASE 2 — Structured extraction using the FULL schema
+    // 6. PHASE 2 — Structured extraction (prefer rich extraction_schema, fall back to fields[])
     let insights: Record<string, unknown> = {};
 
-    const schemaFields: string[] = matchedRow?.schema_definition?.fields ?? [];
-    if (schemaFields.length > 0) {
-      insights = await extractStructured(text, schemaFields);
+    const extractionSchema = matchedRow?.schema_definition?.extraction_schema ?? null;
+    const legacyFields: string[] = matchedRow?.schema_definition?.fields ?? [];
+    if (extractionSchema && Object.keys(extractionSchema).length > 0) {
+      insights = await extractStructured(text, extractionSchema);
+    } else if (legacyFields.length > 0) {
+      insights = await extractStructured(text, legacyFields);
     }
 
     // Attach classification metadata to insights
