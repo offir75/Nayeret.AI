@@ -1,0 +1,85 @@
+{
+  "schema_version": "1.0",
+  "description": "Classification rules and scoring configuration for Nayeret document AI pipeline.",
+  "pipeline_steps": [
+    "1. Run OCR on uploaded document (image/pdf/email).",
+    "2. Normalize text (lowercase, remove punctuation, tokenize).",
+    "3. Score taxonomy candidates using signals.",
+    "4. Apply vendor and keyword boosts.",
+    "5. Apply negative signals if detected.",
+    "6. Compute confidence score.",
+    "7. If score >= threshold \u2192 assign taxonomy.",
+    "8. If below threshold \u2192 fallback to group or UI category."
+  ],
+  "scoring_weights": {
+    "keyword_match": 3,
+    "vendor_match": 5,
+    "ocr_pattern_match": 4,
+    "layout_hint_match": 2,
+    "title_match": 6,
+    "language_hint_match": 1
+  },
+  "negative_signals": [
+    {
+      "signal": "marketing_email",
+      "description": "Document appears to be marketing/promotional rather than transactional.",
+      "penalty": -6
+    },
+    {
+      "signal": "newsletter_layout",
+      "description": "Email newsletter structure detected.",
+      "penalty": -5
+    },
+    {
+      "signal": "missing_amount_for_bill",
+      "description": "Bill classification candidate but no amount detected.",
+      "penalty": -3
+    }
+  ],
+  "confidence_thresholds": {
+    "high_confidence": 0.85,
+    "medium_confidence": 0.65,
+    "low_confidence": 0.45
+  },
+  "fallback_logic": [
+    {
+      "condition": "confidence < 0.45",
+      "action": "classify_as_generic_document"
+    },
+    {
+      "condition": "taxonomy_uncertain",
+      "action": "fallback_to_group"
+    },
+    {
+      "condition": "group_uncertain",
+      "action": "fallback_to_ui_category"
+    }
+  ],
+  "duplicate_detection": {
+    "method": "fuzzy_hash + metadata similarity",
+    "checks": [
+      "same_vendor",
+      "same_amount",
+      "same_date",
+      "similar_text_hash"
+    ],
+    "duplicate_score_threshold": 0.92
+  },
+  "document_lifecycle_rules": {
+    "expiry_detection_fields": [
+      "expiry_date",
+      "end_date",
+      "renewal_date"
+    ],
+    "reminder_offsets_days": [
+      30,
+      14,
+      7
+    ],
+    "event_detection_fields": [
+      "start_date",
+      "reservation_date",
+      "event_date"
+    ]
+  }
+}

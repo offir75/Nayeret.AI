@@ -16,8 +16,10 @@ import {
   normalizeImageFile, renderPdfThumbnail, renderImageThumbnail, computeFileHash,
 } from '@/lib/vault/helpers';
 import { fetchDocuments, uploadFileApi, analyzeFileApi, saveThumbnailApi, deleteDocument, updateDocument } from '@/lib/services/documents';
+import { SUPPORTED_CATEGORIES, categoryLabel } from '@/lib/vault/categories';
 import { VaultSummaryBar, DuplicateDialog, SemanticMatchToast } from '@/components/vault';
 import DocumentDrawer from '@/components/vault/DocumentDrawer';
+import DocumentModal from '@/components/vault/DocumentModal';
 import VaultCard from '@/components/vault/VaultCard';
 import IngestionHub from '@/components/vault/IngestionHub';
 
@@ -416,9 +418,12 @@ export default function Dashboard() {
   const [docs, setDocs] = useState<VaultDoc[]>([]);
   const [loadingLibrary, setLoadingLibrary] = useState(true);
   const [uploadQueue, setUploadQueue] = useState<UploadJob[]>([]);
+  const cancelledIds = useRef<Set<string>>(new Set());
   const [search, setSearch] = useState('');
   const [selectedDoc, setSelectedDoc] = useState<VaultDoc | null>(null);
+  const [fullViewDoc, setFullViewDoc] = useState<VaultDoc | null>(null);
   const [activeTab, setActiveTab] = useState<'recent' | 'all'>('recent');
+  const [activeCategory, setActiveCategory] = useState<string | null>(null);
 
   // ── Deduplication state ───────────────────────────────────────────────────────
   const [tier1Conflict, setTier1Conflict] = useState<{
@@ -504,9 +509,11 @@ export default function Dashboard() {
       return { id: Math.random().toString(36).slice(2), originalFile: file, resolvedName: resolved, status: 'queued' as const };
     });
 
+    cancelledIds.current.clear();
     setUploadQueue(prev => [...prev, ...jobs]);
 
     for (const job of jobs) {
+      if (cancelledIds.current.has(job.id)) continue;
       setUploadQueue(prev => prev.map(j => j.id === job.id ? { ...j, status: 'analyzing' } : j));
       try {
         const { data: { session: fresh } } = await supabase.auth.getSession();
@@ -621,6 +628,7 @@ export default function Dashboard() {
   const handleUpdate = (updated: VaultDoc) => {
     setDocs(prev => prev.map(d => d.id === updated.id ? updated : d));
     setSelectedDoc(prev => prev?.id === updated.id ? updated : prev);
+    setFullViewDoc(prev => prev?.id === updated.id ? updated : prev);
   };
 
   const q = search.toLowerCase();
@@ -641,8 +649,9 @@ export default function Dashboard() {
   const displayedDocs = useMemo(() => {
     const base = isSearching ? filtered : docs;
     const sorted = [...base].sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
-    return activeTab === 'recent' && !isSearching ? sorted.slice(0, RECENT_LIMIT) : sorted;
-  }, [docs, filtered, activeTab, isSearching]);
+    const byTab = activeTab === 'recent' && !isSearching ? sorted.slice(0, RECENT_LIMIT) : sorted;
+    return activeCategory ? byTab.filter(d => d.ui_category === activeCategory) : byTab;
+  }, [docs, filtered, activeTab, isSearching, activeCategory]);
 
   // ── Auth loading gate ──────────────────────────────────────────────────────────
 
@@ -714,6 +723,7 @@ export default function Dashboard() {
           onClose={() => setSelectedDoc(null)}
           onUpdate={handleUpdate}
           onDelete={handleDelete}
+          onViewFull={() => selectedDoc && setFullViewDoc(selectedDoc)}
           hasPrev={selectedDoc ? displayedDocs.findIndex(d => d.id === selectedDoc.id) > 0 : false}
           hasNext={selectedDoc ? displayedDocs.findIndex(d => d.id === selectedDoc.id) < displayedDocs.length - 1 : false}
           onPrev={() => {
@@ -727,6 +737,16 @@ export default function Dashboard() {
             if (idx < displayedDocs.length - 1) setSelectedDoc(displayedDocs[idx + 1]);
           }}
         />
+
+        {/* Full-screen document viewer — outside Vaul so events are unaffected */}
+        {fullViewDoc && session && (
+          <DocumentModal
+            doc={fullViewDoc}
+            token={session.access_token}
+            onClose={() => setFullViewDoc(null)}
+            onUpdate={handleUpdate}
+          />
+        )}
 
         {/* ── Header ── */}
         <motion.header
@@ -773,7 +793,10 @@ export default function Dashboard() {
 
           {/* IngestionHub — inline below the drop area, matching its width */}
           <div className="px-4 md:px-8">
-            <IngestionHub queue={uploadQueue} lang={lang} />
+            <IngestionHub queue={uploadQueue} lang={lang} onCancel={id => {
+              cancelledIds.current.add(id);
+              setUploadQueue(prev => prev.map(j => j.id === id ? { ...j, status: 'cancelled' } : j));
+            }} />
           </div>
 
           {!loadingLibrary && docs.length > 0 && (
@@ -816,6 +839,35 @@ export default function Dashboard() {
                           {docs.length}
                         </span>
                       )}
+                    </button>
+                  ))}
+                </div>
+              )}
+
+              {/* Category filter pills — visible when not searching */
+              {!isSearching && (
+                <div className="mb-4 -mx-1 flex items-center gap-2 overflow-x-auto px-1 pb-1 scrollbar-none">
+                  <button
+                    onClick={() => setActiveCategory(null)}
+                    className={`shrink-0 rounded-full px-3 py-1.5 text-xs font-medium transition-colors ${
+                      activeCategory === null
+                        ? 'bg-zen-sage text-white'
+                        : 'bg-secondary text-muted-foreground hover:text-foreground'
+                    }`}
+                  >
+                    {lang === 'he' ? 'הכל' : 'All'}
+                  </button>
+                  {SUPPORTED_CATEGORIES.map(cat => (
+                    <button
+                      key={cat.key}
+                      onClick={() => { setActiveCategory(prev => prev === cat.key ? null : cat.key); setActiveTab('all'); }}
+                      className={`shrink-0 rounded-full px-3 py-1.5 text-xs font-medium transition-colors ${
+                        activeCategory === cat.key
+                          ? 'bg-zen-sage text-white'
+                          : 'bg-secondary text-muted-foreground hover:text-foreground'
+                      }`}
+                    >
+                      {categoryLabel(cat.key, lang)}
                     </button>
                   ))}
                 </div>

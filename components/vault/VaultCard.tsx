@@ -54,7 +54,8 @@ export default function VaultCard({ doc, index, token, onDelete, onUpdate, onOpe
   const [menuOpen, setMenuOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
 
-  const { label, emoji } = typeConfig(doc.document_type, lang);
+  const hebrewName = doc.insights?.document_type_name_he as string | null | undefined;
+  const { label, emoji } = typeConfig(doc.document_type, lang, hebrewName);
   const displayName = doc.original_filename ?? doc.file_name;
   const summary = lang === 'he' ? doc.summary_he : doc.summary_en;
   const amount = getDisplayAmount(doc, currency);

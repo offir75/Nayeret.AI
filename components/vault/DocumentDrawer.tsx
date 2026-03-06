@@ -1,15 +1,13 @@
 import { useState, useEffect, useRef } from 'react';
-import { createPortal } from 'react-dom';
 import { Drawer } from 'vaul';
 import { X, Trash2, Share2, CheckCircle2, ChevronLeft, ChevronRight } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useSettings } from '@/lib/context/settings';
-import type { VaultDoc, DocumentType } from '@/lib/types';
+import type { VaultDoc } from '@/lib/types';
 import { typeConfig } from './CategoryBadge';
-import { EDITABLE_FIELDS, FIELD_META, DOC_TYPES, DOC_TYPE_LABELS, initDrafts, getInsightFields, labelFromKey } from '@/lib/vault/fieldMeta';
+import { FIELD_META, DOC_TYPES, DOC_TYPE_LABELS, LEGACY_DOC_TYPE_SET, getTypeLabel, getEditableFields, initDrafts, getInsightFields, labelFromKey, normalizeSource } from '@/lib/vault/fieldMeta';
 import { deleteDocument, updateDocument } from '@/lib/services/documents';
 import { convertAmount, fmtMoney } from '@/lib/vault/helpers';
-import DocumentModal from './DocumentModal';
 
 interface Props {
   doc: VaultDoc | null;
@@ -18,6 +16,7 @@ interface Props {
   onClose: () => void;
   onUpdate: (updated: VaultDoc) => void;
   onDelete: (id: string) => void;
+  onViewFull?: () => void;
   hasPrev?: boolean;
   hasNext?: boolean;
   onPrev?: () => void;
@@ -27,18 +26,17 @@ interface Props {
 type SaveState = 'idle' | 'saving' | 'saved' | 'error';
 
 export default function DocumentDrawer({
-  doc, token, open, onClose, onUpdate, onDelete,
+  doc, token, open, onClose, onUpdate, onDelete, onViewFull,
   hasPrev, hasNext, onPrev, onNext,
 }: Props) {
   const { lang, currency } = useSettings();
 
   const [drafts, setDrafts]               = useState<Record<string, string>>({});
-  const [draftType, setDraftType]         = useState<DocumentType>('other');
+  const [draftType, setDraftType]         = useState<string>('other');
   const [draftNotes, setDraftNotes]       = useState('');
   const [saveState, setSaveState]         = useState<SaveState>('idle');
   const [deleteConfirm, setDeleteConfirm] = useState(false);
   const [deleting, setDeleting]           = useState(false);
-  const [viewerOpen, setViewerOpen]       = useState(false);
   const [previewLoaded, setPreviewLoaded] = useState(false);
 
   // Touch-swipe tracking
@@ -53,7 +51,7 @@ export default function DocumentDrawer({
     setDraftNotes(doc.user_notes ?? '');
     setSaveState('idle');
     setDeleteConfirm(false);
-    setViewerOpen(false);
+    setDeleting(false);
     setPreviewLoaded(false);
   }, [doc?.id]);
 
@@ -72,11 +70,21 @@ export default function DocumentDrawer({
 
   if (!doc) return null;
 
-  const { emoji } = typeConfig(doc.document_type, lang);
+  const hebrewTypeName = (doc.insights?.document_type_name_he ?? doc.raw_analysis?.document_type_name_he) as string | null | undefined;
+  const { emoji } = typeConfig(doc.document_type, lang, hebrewTypeName);
   const displayName = doc.original_filename ?? doc.file_name;
   const summary = lang === 'he' ? doc.summary_he : doc.summary_en;
-  const insightFields = getInsightFields(doc.insights ?? doc.raw_analysis);
-  const fields = insightFields.length > 0 ? insightFields : (EDITABLE_FIELDS[draftType] ?? []);
+  const normalizedSource = normalizeSource((doc.insights ?? doc.raw_analysis ?? {}) as Record<string, unknown>);
+  const insightFields = getInsightFields(normalizedSource);
+  const editableKeys = getEditableFields(draftType);
+  const fields = editableKeys.length > 0
+    ? [...editableKeys, ...insightFields.filter(k => !editableKeys.includes(k))]
+    : insightFields;
+
+  const isDirty =
+    draftType !== doc.document_type ||
+    draftNotes !== (doc.user_notes ?? '') ||
+    fields.some(k => (drafts[k] ?? '') !== (normalizedSource[k] != null ? String(normalizedSource[k]) : ''));
 
   const isPdf = doc.file_name.toLowerCase().endsWith('.pdf');
   const fileUrl = `/api/file?id=${doc.id}&t=${encodeURIComponent(token)}`;
@@ -159,19 +167,37 @@ export default function DocumentDrawer({
   const renderFieldCompact = (key: string) => {
     const meta = FIELD_META[key];
     const label = meta ? (lang === 'he' ? meta.he : meta.en) : labelFromKey(key);
+    const isCurrency = meta?.type === 'currency';
     const isDate = meta?.type === 'date';
-    const isNumber = meta?.type === 'number' || meta?.type === 'currency';
+    const isNumber = meta?.type === 'number';
+    const inputCls = 'w-full rounded-lg bg-secondary px-2.5 py-1.5 text-xs text-foreground ring-1 ring-border/60 outline-none focus:ring-2 focus:ring-[#7a8c6e]/40';
 
     return (
       <div key={key} className="flex flex-col gap-0.5">
         <label className="text-[10px] font-medium leading-none text-muted-foreground">{label}</label>
-        <input
-          type={isDate ? 'date' : isNumber ? 'number' : 'text'}
-          dir={isDate || isNumber ? 'ltr' : 'auto'}
-          value={drafts[key] ?? ''}
-          onChange={e => setDrafts(prev => ({ ...prev, [key]: e.target.value }))}
-          className="w-full rounded-lg bg-secondary px-2.5 py-1.5 text-xs text-foreground ring-1 ring-border/60 outline-none focus:ring-2 focus:ring-[#7a8c6e]/40"
-        />
+        {isCurrency ? (
+          <select
+            value={drafts[key] ?? ''}
+            onChange={e => setDrafts(prev => ({ ...prev, [key]: e.target.value }))}
+            className={`${inputCls} cursor-pointer`}
+            dir="ltr"
+          >
+            <option value="">—</option>
+            <option value="ILS">₪ ILS</option>
+            <option value="USD">$ USD</option>
+            <option value="EUR">€ EUR</option>
+          </select>
+        ) : (
+          <input
+            type={isDate ? 'date' : isNumber ? 'number' : 'text'}
+            dir={isDate || isNumber ? 'ltr' : 'auto'}
+            value={drafts[key] ?? ''}
+            onChange={e => setDrafts(prev => ({ ...prev, [key]: e.target.value }))}
+            onPointerDown={isDate ? e => e.stopPropagation() : undefined}
+            onClick={isDate ? e => { try { (e.currentTarget as HTMLInputElement).showPicker(); } catch {} } : undefined}
+            className={inputCls}
+          />
+        )}
       </div>
     );
   };
@@ -250,7 +276,7 @@ export default function DocumentDrawer({
               {/* Document preview — border uses 'border' not 'ring' to avoid scroll-container clipping */}
               <motion.button
                 whileTap={{ scale: 0.97 }}
-                onClick={() => setViewerOpen(true)}
+                onClick={onViewFull}
                 className="relative shrink-0 w-[38%] h-56 rounded-2xl overflow-hidden border border-border/40 hover:border-[#7a8c6e]/60 transition-colors bg-secondary flex items-center justify-center"
                 aria-label={lang === 'he' ? 'צפה במסמך' : 'View document'}
               >
@@ -328,6 +354,16 @@ export default function DocumentDrawer({
                   {lang === 'he' ? 'קטגוריה' : 'Category'}
                 </label>
                 <div className="flex flex-wrap gap-2">
+                  {/* Free-form taxonomy chip — shown when the stored type isn't a legacy enum value */}
+                  {!LEGACY_DOC_TYPE_SET.has(draftType) && (
+                    <button
+                      key={draftType}
+                      onClick={() => setDraftType(draftType)}
+                      className="rounded-full px-3 py-1 text-xs font-medium ring-1 transition-colors bg-[#7a8c6e] text-white ring-[#7a8c6e]"
+                    >
+                      {getTypeLabel(draftType, lang, hebrewTypeName)}
+                    </button>
+                  )}
                   {DOC_TYPES.map(type => {
                     const active = draftType === type;
                     return (
@@ -375,21 +411,22 @@ export default function DocumentDrawer({
             </div>
           </div>
 
-          {/* Action bar */}
+          {/* Action bar — single row: Save · Share · Delete */}
           <div
-            className="flex flex-col gap-2 border-t border-border/50 px-5 pt-3"
+            className="flex gap-2 border-t border-border/50 px-5 pt-3"
             style={{ paddingBottom: 'max(1.25rem, env(safe-area-inset-bottom))' }}
           >
             {/* Save */}
             <motion.button
-              whileTap={{ scale: 0.97 }}
+              whileTap={isDirty ? { scale: 0.97 } : {}}
               onClick={handleSave}
-              disabled={saveState === 'saving'}
-              className={`flex w-full items-center justify-center gap-2 rounded-2xl py-3.5 text-sm font-semibold text-white transition-colors ${
+              disabled={!isDirty || saveState === 'saving'}
+              className={`flex flex-1 items-center justify-center gap-1.5 rounded-2xl py-3 text-sm font-semibold text-white transition-colors ${
                 saveState === 'saved'  ? 'bg-[#5a7a4a]' :
                 saveState === 'error'  ? 'bg-destructive' :
                 saveState === 'saving' ? 'bg-[#7a8c6e]/70' :
-                'bg-[#7a8c6e] active:bg-[#6a7c5e]'
+                isDirty                ? 'bg-[#7a8c6e] active:bg-[#6a7c5e]' :
+                'bg-[#7a8c6e]/30 cursor-not-allowed'
               }`}
             >
               <AnimatePresence mode="wait">
@@ -408,50 +445,41 @@ export default function DocumentDrawer({
               {saveLabel()}
             </motion.button>
 
-            {/* Share + Delete row */}
-            <div className="flex gap-2">
-              <motion.button
-                whileTap={{ scale: 0.97 }}
-                onClick={handleShare}
-                className="flex flex-1 items-center justify-center gap-2 rounded-2xl bg-secondary py-3 text-sm font-medium text-foreground ring-1 ring-border/60 hover:bg-secondary/80 transition-colors"
-              >
-                <Share2 className="h-4 w-4 shrink-0" />
-                {lang === 'he' ? 'שיתוף' : 'Share'}
-              </motion.button>
+            {/* Share */}
+            <motion.button
+              whileTap={{ scale: 0.97 }}
+              onClick={handleShare}
+              className="flex flex-1 items-center justify-center gap-1.5 rounded-2xl bg-secondary py-3 text-sm font-medium text-foreground ring-1 ring-border/60 hover:bg-secondary/80 transition-colors"
+            >
+              <Share2 className="h-4 w-4 shrink-0" />
+              {lang === 'he' ? 'שיתוף' : 'Share'}
+            </motion.button>
 
-              <motion.button
-                whileTap={{ scale: 0.97 }}
-                onClick={handleDelete}
-                disabled={deleting}
-                className={`flex flex-1 items-center justify-center gap-2 rounded-2xl py-3 text-sm font-medium ring-1 transition-colors ${
-                  deleteConfirm
-                    ? 'bg-destructive text-white ring-destructive'
-                    : 'bg-secondary text-destructive ring-border/60 hover:bg-destructive/10'
-                }`}
-              >
-                <Trash2 className="h-4 w-4 shrink-0" />
-                {deleting
-                  ? (lang === 'he' ? 'מוחק...' : 'Deleting...')
-                  : deleteConfirm
-                    ? (lang === 'he' ? 'מחק לצמיתות?' : 'Confirm delete?')
-                    : (lang === 'he' ? 'מחיקה' : 'Delete')}
-              </motion.button>
-            </div>
+            {/* Delete */}
+            <motion.button
+              whileTap={{ scale: 0.97 }}
+              onClick={handleDelete}
+              disabled={deleting}
+              className={`flex flex-1 items-center justify-center gap-1.5 rounded-2xl py-3 text-sm font-medium ring-1 transition-colors ${
+                deleteConfirm
+                  ? 'bg-destructive text-white ring-destructive'
+                  : 'bg-secondary text-destructive ring-border/60 hover:bg-destructive/10'
+              }`}
+            >
+              {deleting
+                ? <div className="h-4 w-4 shrink-0 rounded-full border-2 border-current/40 border-t-current animate-spin" />
+                : <Trash2 className="h-4 w-4 shrink-0" />}
+              {deleting
+                ? (lang === 'he' ? 'מוחק...' : 'Deleting...')
+                : deleteConfirm
+                  ? (lang === 'he' ? 'אשר?' : 'Confirm?')
+                  : (lang === 'he' ? 'מחיקה' : 'Delete')}
+            </motion.button>
           </div>
         </Drawer.Content>
       </Drawer.Portal>
     </Drawer.Root>
 
-    {/* Full-screen viewer — rendered at body level to clear the drawer's stacking context */}
-    {viewerOpen && typeof document !== 'undefined' && createPortal(
-      <DocumentModal
-        doc={doc}
-        token={token}
-        onClose={() => setViewerOpen(false)}
-        onUpdate={onUpdate}
-      />,
-      document.body,
-    )}
     </>
   );
 }

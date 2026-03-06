@@ -6,7 +6,8 @@ export type SortCol = 'name' | 'category' | 'amount' | 'due_date' | 'uploaded';
 export interface VaultDoc {
   id: string;
   file_name: string;
-  document_type: DocumentType;
+  document_type: string;
+  ui_category: string | null;
   summary_he: string | null;
   summary_en: string | null;
   raw_analysis: Record<string, unknown> | null;
@@ -20,7 +21,7 @@ export interface VaultDoc {
 export interface UpdateDocumentPayload {
   id: string;
   user_notes?: string;
-  document_type?: DocumentType;
+  document_type?: string;
   raw_analysis?: Record<string, unknown>;
   summary_he?: string;
   summary_en?: string;
@@ -31,7 +32,7 @@ export interface UpdateDocumentPayload {
 export interface DuplicateDocInfo {
   id: string;
   file_name: string;
-  document_type: DocumentType;
+  document_type: string;
   thumbnail_url: string | null;
 }
 
@@ -39,7 +40,7 @@ export interface SemanticMatchInfo {
   id: string;
   file_name: string;
   original_filename: string | null;
-  document_type: DocumentType;
+  document_type: string;
 }
 
 export interface UploadApiResponse {
@@ -59,7 +60,7 @@ export interface UploadJob {
   id: string;
   originalFile: File;
   resolvedName: string;
-  status: 'queued' | 'analyzing' | 'done' | 'error';
+  status: 'queued' | 'analyzing' | 'done' | 'error' | 'cancelled';
   errorMsg?: string;
 }
 
@@ -74,6 +75,7 @@ export interface AnalyzeApiResponse {
   supabaseId: string | null;
   is_media?: boolean;
   semanticMatch?: SemanticMatchInfo | null;
+  new_type_created?: boolean;
 }
 
 export interface DocumentsApiResponse {

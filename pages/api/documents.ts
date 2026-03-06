@@ -16,7 +16,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   if (req.method === 'GET') {
     const { data, error } = await supabaseAdmin
       .from('documents')
-      .select('id, file_name, original_filename, document_type, summary_he, summary_en, raw_analysis, insights, thumbnail_url, created_at, user_notes')
+      .select('id, file_name, original_filename, document_type, ui_category, summary_he, summary_en, raw_analysis, insights, thumbnail_url, created_at, user_notes')
       .eq('owner_id', userId)
       .order('created_at', { ascending: false });
 
@@ -108,7 +108,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       .from('documents')
       .update(patch)
       .eq('id', id)
-      .select('id, file_name, original_filename, document_type, summary_he, summary_en, raw_analysis, insights, thumbnail_url, created_at, user_notes')
+      .select('id, file_name, original_filename, document_type, ui_category, summary_he, summary_en, raw_analysis, insights, thumbnail_url, created_at, user_notes')
       .single();
 
     if (updateError) { res.status(500).json({ error: 'Update failed', details: updateError.message }); return; }

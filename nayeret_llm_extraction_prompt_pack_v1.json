@@ -1,0 +1,1078 @@
+{
+  "schema_version": "1.0",
+  "package_name": "nayeret_llm_extraction_prompt_pack",
+  "supported_languages": [
+    "he",
+    "en",
+    "mixed"
+  ],
+  "templates": [
+    {
+      "template_id": "passport_extractor",
+      "name": "Passport Extractor",
+      "target_taxonomies": [
+        "Passport"
+      ],
+      "description": "Extract identity and validity fields from passport bio page.",
+      "system_prompt": "You are a document extraction engine for Nayeret, a personal document organizer. Read OCR text and visible layout hints, identify the most likely document meaning, and extract only grounded metadata. Support Hebrew and English documents.",
+      "extraction_instructions": [
+        "Extract full_name, document_number, nationality, birth_date, issue_date, expiry_date, sex, issuing_country.",
+        "Use MRZ lines as a strong source when present.",
+        "If both visual text and MRZ exist, prefer the clearer source and record evidence."
+      ],
+      "hallucination_guards": [
+        "Only extract values explicitly present in the document or OCR text.",
+        "Do not infer missing dates, amounts, names, or IDs.",
+        "If a field is not found, return null.",
+        "If OCR is ambiguous, prefer null over guessing.",
+        "Preserve original spelling for names and merchant/vendor names.",
+        "Normalize dates to ISO-8601 when possible; otherwise return raw_text in evidence.",
+        "Normalize currency amounts when possible; otherwise return raw_text in evidence.",
+        "Return confidence per extracted field between 0 and 1.",
+        "Do not invent nationality from language alone."
+      ],
+      "output_contract": {
+        "format": "json",
+        "top_level_fields": {
+          "taxonomy": "string",
+          "language": "string",
+          "document_summary": "string",
+          "extracted_fields": "object",
+          "field_evidence": "object",
+          "warnings": "string[]"
+        }
+      }
+    },
+    {
+      "template_id": "national_id_extractor",
+      "name": "National ID Extractor",
+      "target_taxonomies": [
+        "National ID Card",
+        "ID Supplement / Address Slip"
+      ],
+      "description": "Extract core identity details from national ID card and address supplement.",
+      "system_prompt": "You are a document extraction engine for Nayeret, a personal document organizer. Read OCR text and visible layout hints, identify the most likely document meaning, and extract only grounded metadata. Support Hebrew and English documents.",
+      "extraction_instructions": [
+        "Extract full_name, id_number, birth_date, issue_date, expiry_date, address if present.",
+        "If front/back are mixed, merge only if evidence is explicit."
+      ],
+      "hallucination_guards": [
+        "Only extract values explicitly present in the document or OCR text.",
+        "Do not infer missing dates, amounts, names, or IDs.",
+        "If a field is not found, return null.",
+        "If OCR is ambiguous, prefer null over guessing.",
+        "Preserve original spelling for names and merchant/vendor names.",
+        "Normalize dates to ISO-8601 when possible; otherwise return raw_text in evidence.",
+        "Normalize currency amounts when possible; otherwise return raw_text in evidence.",
+        "Return confidence per extracted field between 0 and 1."
+      ],
+      "output_contract": {
+        "format": "json",
+        "top_level_fields": {
+          "taxonomy": "string",
+          "language": "string",
+          "document_summary": "string",
+          "extracted_fields": "object",
+          "field_evidence": "object",
+          "warnings": "string[]"
+        }
+      }
+    },
+    {
+      "template_id": "drivers_license_extractor",
+      "name": "Driver License Extractor",
+      "target_taxonomies": [
+        "Driver License"
+      ],
+      "description": "Extract driver and validity details from a driver license.",
+      "system_prompt": "You are a document extraction engine for Nayeret, a personal document organizer. Read OCR text and visible layout hints, identify the most likely document meaning, and extract only grounded metadata. Support Hebrew and English documents.",
+      "extraction_instructions": [
+        "Extract full_name, document_number, birth_date, issue_date, expiry_date, license_classes, restrictions.",
+        "Capture classes exactly as written."
+      ],
+      "hallucination_guards": [
+        "Only extract values explicitly present in the document or OCR text.",
+        "Do not infer missing dates, amounts, names, or IDs.",
+        "If a field is not found, return null.",
+        "If OCR is ambiguous, prefer null over guessing.",
+        "Preserve original spelling for names and merchant/vendor names.",
+        "Normalize dates to ISO-8601 when possible; otherwise return raw_text in evidence.",
+        "Normalize currency amounts when possible; otherwise return raw_text in evidence.",
+        "Return confidence per extracted field between 0 and 1."
+      ],
+      "output_contract": {
+        "format": "json",
+        "top_level_fields": {
+          "taxonomy": "string",
+          "language": "string",
+          "document_summary": "string",
+          "extracted_fields": "object",
+          "field_evidence": "object",
+          "warnings": "string[]"
+        }
+      }
+    },
+    {
+      "template_id": "utility_bill_extractor",
+      "name": "Utility Bill Extractor",
+      "target_taxonomies": [
+        "Electricity Bill",
+        "Water Bill",
+        "Gas Bill",
+        "Internet Bill",
+        "Telecom Bill",
+        "Cable / TV Bill",
+        "Municipality Tax Bill"
+      ],
+      "description": "Extract billing metadata from household utility and municipal bills.",
+      "system_prompt": "You are a document extraction engine for Nayeret, a personal document organizer. Read OCR text and visible layout hints, identify the most likely document meaning, and extract only grounded metadata. Support Hebrew and English documents.",
+      "extraction_instructions": [
+        "Extract customer_name, customer_number, bill_date, due_date, billing_period, total_amount, currency, service_address, provider_name.",
+        "For telecom, also extract line_number if present.",
+        "For electricity or water, extract usage amount and usage unit if present."
+      ],
+      "hallucination_guards": [
+        "Only extract values explicitly present in the document or OCR text.",
+        "Do not infer missing dates, amounts, names, or IDs.",
+        "If a field is not found, return null.",
+        "If OCR is ambiguous, prefer null over guessing.",
+        "Preserve original spelling for names and merchant/vendor names.",
+        "Normalize dates to ISO-8601 when possible; otherwise return raw_text in evidence.",
+        "Normalize currency amounts when possible; otherwise return raw_text in evidence.",
+        "Return confidence per extracted field between 0 and 1.",
+        "Do not assume provider_name if only a logo is partially visible and OCR is unclear."
+      ],
+      "output_contract": {
+        "format": "json",
+        "top_level_fields": {
+          "taxonomy": "string",
+          "language": "string",
+          "document_summary": "string",
+          "extracted_fields": "object",
+          "field_evidence": "object",
+          "warnings": "string[]"
+        }
+      }
+    },
+    {
+      "template_id": "bank_statement_extractor",
+      "name": "Bank Statement Extractor",
+      "target_taxonomies": [
+        "Bank Statement",
+        "Savings Account Statement",
+        "Business Bank Statement"
+      ],
+      "description": "Extract statement metadata from bank account statements.",
+      "system_prompt": "You are a document extraction engine for Nayeret, a personal document organizer. Read OCR text and visible layout hints, identify the most likely document meaning, and extract only grounded metadata. Support Hebrew and English documents.",
+      "extraction_instructions": [
+        "Extract account_holder, account_number (masked if masked), issue_date, statement_period, ending_balance, currency, bank_name.",
+        "Do not extract every transaction unless specifically requested."
+      ],
+      "hallucination_guards": [
+        "Only extract values explicitly present in the document or OCR text.",
+        "Do not infer missing dates, amounts, names, or IDs.",
+        "If a field is not found, return null.",
+        "If OCR is ambiguous, prefer null over guessing.",
+        "Preserve original spelling for names and merchant/vendor names.",
+        "Normalize dates to ISO-8601 when possible; otherwise return raw_text in evidence.",
+        "Normalize currency amounts when possible; otherwise return raw_text in evidence.",
+        "Return confidence per extracted field between 0 and 1."
+      ],
+      "output_contract": {
+        "format": "json",
+        "top_level_fields": {
+          "taxonomy": "string",
+          "language": "string",
+          "document_summary": "string",
+          "extracted_fields": "object",
+          "field_evidence": "object",
+          "warnings": "string[]"
+        }
+      }
+    },
+    {
+      "template_id": "credit_card_statement_extractor",
+      "name": "Credit Card Statement Extractor",
+      "target_taxonomies": [
+        "Credit Card Statement",
+        "Debit Card Statement"
+      ],
+      "description": "Extract core metadata from card statements.",
+      "system_prompt": "You are a document extraction engine for Nayeret, a personal document organizer. Read OCR text and visible layout hints, identify the most likely document meaning, and extract only grounded metadata. Support Hebrew and English documents.",
+      "extraction_instructions": [
+        "Extract cardholder_name, card_number_masked, issue_date, statement_period, due_date, minimum_payment, total_amount_due, currency, issuer_name.",
+        "Do not guess full card number."
+      ],
+      "hallucination_guards": [
+        "Only extract values explicitly present in the document or OCR text.",
+        "Do not infer missing dates, amounts, names, or IDs.",
+        "If a field is not found, return null.",
+        "If OCR is ambiguous, prefer null over guessing.",
+        "Preserve original spelling for names and merchant/vendor names.",
+        "Normalize dates to ISO-8601 when possible; otherwise return raw_text in evidence.",
+        "Normalize currency amounts when possible; otherwise return raw_text in evidence.",
+        "Return confidence per extracted field between 0 and 1."
+      ],
+      "output_contract": {
+        "format": "json",
+        "top_level_fields": {
+          "taxonomy": "string",
+          "language": "string",
+          "document_summary": "string",
+          "extracted_fields": "object",
+          "field_evidence": "object",
+          "warnings": "string[]"
+        }
+      }
+    },
+    {
+      "template_id": "loan_mortgage_extractor",
+      "name": "Loan / Mortgage Extractor",
+      "target_taxonomies": [
+        "Loan Statement",
+        "Mortgage Statement",
+        "Mortgage Contract",
+        "Escrow Statement",
+        "Phone Installment Plan"
+      ],
+      "description": "Extract credit account metadata for loans, mortgages, and installment plans.",
+      "system_prompt": "You are a document extraction engine for Nayeret, a personal document organizer. Read OCR text and visible layout hints, identify the most likely document meaning, and extract only grounded metadata. Support Hebrew and English documents.",
+      "extraction_instructions": [
+        "Extract lender_name, borrower_name, account_number, statement_date, due_date, payment_amount, principal_balance, interest_rate if present, maturity_date if present."
+      ],
+      "hallucination_guards": [
+        "Only extract values explicitly present in the document or OCR text.",
+        "Do not infer missing dates, amounts, names, or IDs.",
+        "If a field is not found, return null.",
+        "If OCR is ambiguous, prefer null over guessing.",
+        "Preserve original spelling for names and merchant/vendor names.",
+        "Normalize dates to ISO-8601 when possible; otherwise return raw_text in evidence.",
+        "Normalize currency amounts when possible; otherwise return raw_text in evidence.",
+        "Return confidence per extracted field between 0 and 1."
+      ],
+      "output_contract": {
+        "format": "json",
+        "top_level_fields": {
+          "taxonomy": "string",
+          "language": "string",
+          "document_summary": "string",
+          "extracted_fields": "object",
+          "field_evidence": "object",
+          "warnings": "string[]"
+        }
+      }
+    },
+    {
+      "template_id": "payslip_extractor",
+      "name": "Payslip Extractor",
+      "target_taxonomies": [
+        "Pay Slip",
+        "Bonus Statement",
+        "Timesheet",
+        "Employment Verification Letter",
+        "Offer Letter"
+      ],
+      "description": "Extract employment and income information from payroll-related documents.",
+      "system_prompt": "You are a document extraction engine for Nayeret, a personal document organizer. Read OCR text and visible layout hints, identify the most likely document meaning, and extract only grounded metadata. Support Hebrew and English documents.",
+      "extraction_instructions": [
+        "For payslips extract employee_name, employer_name, pay_period, payment_date, gross_pay, net_pay, tax_amount, pension_amount, currency.",
+        "For offer/verification letters extract employee_name, employer_name, title, start_date, salary if present."
+      ],
+      "hallucination_guards": [
+        "Only extract values explicitly present in the document or OCR text.",
+        "Do not infer missing dates, amounts, names, or IDs.",
+        "If a field is not found, return null.",
+        "If OCR is ambiguous, prefer null over guessing.",
+        "Preserve original spelling for names and merchant/vendor names.",
+        "Normalize dates to ISO-8601 when possible; otherwise return raw_text in evidence.",
+        "Normalize currency amounts when possible; otherwise return raw_text in evidence.",
+        "Return confidence per extracted field between 0 and 1.",
+        "Never infer yearly salary from monthly salary unless explicitly stated."
+      ],
+      "output_contract": {
+        "format": "json",
+        "top_level_fields": {
+          "taxonomy": "string",
+          "language": "string",
+          "document_summary": "string",
+          "extracted_fields": "object",
+          "field_evidence": "object",
+          "warnings": "string[]"
+        }
+      }
+    },
+    {
+      "template_id": "investment_extractor",
+      "name": "Investment / Pension Extractor",
+      "target_taxonomies": [
+        "Investment Statement",
+        "Pension Statement",
+        "Provident Fund Statement",
+        "Education Fund Statement",
+        "Trade Confirmation",
+        "Dividend Notice",
+        "Cryptocurrency Statement",
+        "Stock Option Grant"
+      ],
+      "description": "Extract investment account and retirement summary metadata.",
+      "system_prompt": "You are a document extraction engine for Nayeret, a personal document organizer. Read OCR text and visible layout hints, identify the most likely document meaning, and extract only grounded metadata. Support Hebrew and English documents.",
+      "extraction_instructions": [
+        "Extract account_holder, provider_name, issue_date, statement_period, ending_balance or portfolio_value, currency.",
+        "For trade confirmations also extract trade_date, symbol, quantity, trade_price if present.",
+        "For stock option grant also extract grant_date, vesting_summary, strike_price if present."
+      ],
+      "hallucination_guards": [
+        "Only extract values explicitly present in the document or OCR text.",
+        "Do not infer missing dates, amounts, names, or IDs.",
+        "If a field is not found, return null.",
+        "If OCR is ambiguous, prefer null over guessing.",
+        "Preserve original spelling for names and merchant/vendor names.",
+        "Normalize dates to ISO-8601 when possible; otherwise return raw_text in evidence.",
+        "Normalize currency amounts when possible; otherwise return raw_text in evidence.",
+        "Return confidence per extracted field between 0 and 1."
+      ],
+      "output_contract": {
+        "format": "json",
+        "top_level_fields": {
+          "taxonomy": "string",
+          "language": "string",
+          "document_summary": "string",
+          "extracted_fields": "object",
+          "field_evidence": "object",
+          "warnings": "string[]"
+        }
+      }
+    },
+    {
+      "template_id": "tax_extractor",
+      "name": "Tax Extractor",
+      "target_taxonomies": [
+        "Tax Return",
+        "Tax Assessment Notice",
+        "Tax Payment Receipt",
+        "Property Tax Statement"
+      ],
+      "description": "Extract tax identifiers, dates, and amounts from tax documents.",
+      "system_prompt": "You are a document extraction engine for Nayeret, a personal document organizer. Read OCR text and visible layout hints, identify the most likely document meaning, and extract only grounded metadata. Support Hebrew and English documents.",
+      "extraction_instructions": [
+        "Extract taxpayer_name, taxpayer_id, tax_year, issue_date, due_date, total_amount, refund_amount if present, authority_name.",
+        "For payment receipts extract payment_reference."
+      ],
+      "hallucination_guards": [
+        "Only extract values explicitly present in the document or OCR text.",
+        "Do not infer missing dates, amounts, names, or IDs.",
+        "If a field is not found, return null.",
+        "If OCR is ambiguous, prefer null over guessing.",
+        "Preserve original spelling for names and merchant/vendor names.",
+        "Normalize dates to ISO-8601 when possible; otherwise return raw_text in evidence.",
+        "Normalize currency amounts when possible; otherwise return raw_text in evidence.",
+        "Return confidence per extracted field between 0 and 1."
+      ],
+      "output_contract": {
+        "format": "json",
+        "top_level_fields": {
+          "taxonomy": "string",
+          "language": "string",
+          "document_summary": "string",
+          "extracted_fields": "object",
+          "field_evidence": "object",
+          "warnings": "string[]"
+        }
+      }
+    },
+    {
+      "template_id": "generic_receipt_extractor",
+      "name": "Generic Receipt Extractor",
+      "target_taxonomies": [
+        "Retail Receipt",
+        "Online Order Confirmation",
+        "Online Purchase Receipt",
+        "Supermarket Receipt",
+        "Restaurant Receipt",
+        "Fuel Receipt",
+        "Pharmacy Receipt",
+        "Electronics Receipt",
+        "Clothing Receipt",
+        "Service Receipt",
+        "Repair Receipt",
+        "Return / Refund Receipt",
+        "Charitable Donation Receipt",
+        "Childcare Receipt",
+        "Therapy Receipt",
+        "PayPal Receipt",
+        "Stripe Receipt",
+        "Apple App Store Receipt",
+        "Google Play Receipt",
+        "Amazon Order Invoice",
+        "Utility Refund Notice",
+        "Travel Expense Receipt",
+        "Baggage Fee Receipt",
+        "Airline Receipt"
+      ],
+      "description": "Extract merchant, date, amount, and transaction reference from receipts and purchase confirmations.",
+      "system_prompt": "You are a document extraction engine for Nayeret, a personal document organizer. Read OCR text and visible layout hints, identify the most likely document meaning, and extract only grounded metadata. Support Hebrew and English documents.",
+      "extraction_instructions": [
+        "Extract merchant_name, transaction_date, total_amount, currency, payment_method, transaction_reference, order_number if present.",
+        "If line items are short and clear, extract an items array with description and amount.",
+        "For refund receipts, extract refunded_amount and original_reference if present."
+      ],
+      "hallucination_guards": [
+        "Only extract values explicitly present in the document or OCR text.",
+        "Do not infer missing dates, amounts, names, or IDs.",
+        "If a field is not found, return null.",
+        "If OCR is ambiguous, prefer null over guessing.",
+        "Preserve original spelling for names and merchant/vendor names.",
+        "Normalize dates to ISO-8601 when possible; otherwise return raw_text in evidence.",
+        "Normalize currency amounts when possible; otherwise return raw_text in evidence.",
+        "Return confidence per extracted field between 0 and 1.",
+        "Do not sum line items if total is already printed; prefer explicit total."
+      ],
+      "output_contract": {
+        "format": "json",
+        "top_level_fields": {
+          "taxonomy": "string",
+          "language": "string",
+          "document_summary": "string",
+          "extracted_fields": "object",
+          "field_evidence": "object",
+          "warnings": "string[]"
+        }
+      }
+    },
+    {
+      "template_id": "warranty_extractor",
+      "name": "Warranty Extractor",
+      "target_taxonomies": [
+        "Warranty Certificate",
+        "Home Appliance Warranty",
+        "Car Warranty"
+      ],
+      "description": "Extract product warranty metadata.",
+      "system_prompt": "You are a document extraction engine for Nayeret, a personal document organizer. Read OCR text and visible layout hints, identify the most likely document meaning, and extract only grounded metadata. Support Hebrew and English documents.",
+      "extraction_instructions": [
+        "Extract provider_name, merchant_name if present, product_name, model_number, serial_number, purchase_date, warranty_start_date, warranty_end_date, warranty_term, reference_number."
+      ],
+      "hallucination_guards": [
+        "Only extract values explicitly present in the document or OCR text.",
+        "Do not infer missing dates, amounts, names, or IDs.",
+        "If a field is not found, return null.",
+        "If OCR is ambiguous, prefer null over guessing.",
+        "Preserve original spelling for names and merchant/vendor names.",
+        "Normalize dates to ISO-8601 when possible; otherwise return raw_text in evidence.",
+        "Normalize currency amounts when possible; otherwise return raw_text in evidence.",
+        "Return confidence per extracted field between 0 and 1."
+      ],
+      "output_contract": {
+        "format": "json",
+        "top_level_fields": {
+          "taxonomy": "string",
+          "language": "string",
+          "document_summary": "string",
+          "extracted_fields": "object",
+          "field_evidence": "object",
+          "warnings": "string[]"
+        }
+      }
+    },
+    {
+      "template_id": "insurance_policy_extractor",
+      "name": "Insurance Policy Extractor",
+      "target_taxonomies": [
+        "Health Insurance Policy",
+        "Supplementary Health Insurance",
+        "Life Insurance Policy",
+        "Home Insurance Policy",
+        "Car Insurance Policy",
+        "Travel Insurance Policy",
+        "Dental Insurance Policy",
+        "Disability Insurance Policy",
+        "Pet Insurance Policy",
+        "Business Liability Insurance",
+        "Coverage Renewal Notice",
+        "Policy Quote"
+      ],
+      "description": "Extract policy metadata from insurance documents and quotes.",
+      "system_prompt": "You are a document extraction engine for Nayeret, a personal document organizer. Read OCR text and visible layout hints, identify the most likely document meaning, and extract only grounded metadata. Support Hebrew and English documents.",
+      "extraction_instructions": [
+        "Extract provider_name, policy_number, insured_name, start_date, end_date, renewal_date if present, premium_amount, currency.",
+        "Extract policy_type and covered_asset_or_person if explicit.",
+        "For quotes extract quoted_premium and quote_valid_until if present."
+      ],
+      "hallucination_guards": [
+        "Only extract values explicitly present in the document or OCR text.",
+        "Do not infer missing dates, amounts, names, or IDs.",
+        "If a field is not found, return null.",
+        "If OCR is ambiguous, prefer null over guessing.",
+        "Preserve original spelling for names and merchant/vendor names.",
+        "Normalize dates to ISO-8601 when possible; otherwise return raw_text in evidence.",
+        "Normalize currency amounts when possible; otherwise return raw_text in evidence.",
+        "Return confidence per extracted field between 0 and 1."
+      ],
+      "output_contract": {
+        "format": "json",
+        "top_level_fields": {
+          "taxonomy": "string",
+          "language": "string",
+          "document_summary": "string",
+          "extracted_fields": "object",
+          "field_evidence": "object",
+          "warnings": "string[]"
+        }
+      }
+    },
+    {
+      "template_id": "insurance_claim_extractor",
+      "name": "Insurance Claim / Reimbursement Extractor",
+      "target_taxonomies": [
+        "Insurance Claim Form",
+        "Reimbursement Approval",
+        "Reimbursement Rejection Notice"
+      ],
+      "description": "Extract claim submission and outcome metadata.",
+      "system_prompt": "You are a document extraction engine for Nayeret, a personal document organizer. Read OCR text and visible layout hints, identify the most likely document meaning, and extract only grounded metadata. Support Hebrew and English documents.",
+      "extraction_instructions": [
+        "Extract claimant_name, provider_name, claim_number, claim_date, service_date if present, approved_amount or rejected_amount, status, reason if present."
+      ],
+      "hallucination_guards": [
+        "Only extract values explicitly present in the document or OCR text.",
+        "Do not infer missing dates, amounts, names, or IDs.",
+        "If a field is not found, return null.",
+        "If OCR is ambiguous, prefer null over guessing.",
+        "Preserve original spelling for names and merchant/vendor names.",
+        "Normalize dates to ISO-8601 when possible; otherwise return raw_text in evidence.",
+        "Normalize currency amounts when possible; otherwise return raw_text in evidence.",
+        "Return confidence per extracted field between 0 and 1."
+      ],
+      "output_contract": {
+        "format": "json",
+        "top_level_fields": {
+          "taxonomy": "string",
+          "language": "string",
+          "document_summary": "string",
+          "extracted_fields": "object",
+          "field_evidence": "object",
+          "warnings": "string[]"
+        }
+      }
+    },
+    {
+      "template_id": "vehicle_document_extractor",
+      "name": "Vehicle Document Extractor",
+      "target_taxonomies": [
+        "Vehicle Registration",
+        "Vehicle Inspection Reminder",
+        "Vehicle Service Record",
+        "Vehicle Purchase Invoice",
+        "Vehicle Sale Agreement",
+        "Driver Points Statement",
+        "Parking Permit",
+        "Parking Subscription Bill",
+        "Toll Charge Notice"
+      ],
+      "description": "Extract vehicle identifiers, dates, and payment/reminder metadata.",
+      "system_prompt": "You are a document extraction engine for Nayeret, a personal document organizer. Read OCR text and visible layout hints, identify the most likely document meaning, and extract only grounded metadata. Support Hebrew and English documents.",
+      "extraction_instructions": [
+        "Extract owner_name, license_plate, vehicle_model, vehicle_year if present, reference_number, issue_date, expiry_date, due_date, total_amount if present.",
+        "For service records extract service_date, garage_name, odometer if present."
+      ],
+      "hallucination_guards": [
+        "Only extract values explicitly present in the document or OCR text.",
+        "Do not infer missing dates, amounts, names, or IDs.",
+        "If a field is not found, return null.",
+        "If OCR is ambiguous, prefer null over guessing.",
+        "Preserve original spelling for names and merchant/vendor names.",
+        "Normalize dates to ISO-8601 when possible; otherwise return raw_text in evidence.",
+        "Normalize currency amounts when possible; otherwise return raw_text in evidence.",
+        "Return confidence per extracted field between 0 and 1."
+      ],
+      "output_contract": {
+        "format": "json",
+        "top_level_fields": {
+          "taxonomy": "string",
+          "language": "string",
+          "document_summary": "string",
+          "extracted_fields": "object",
+          "field_evidence": "object",
+          "warnings": "string[]"
+        }
+      }
+    },
+    {
+      "template_id": "fine_ticket_extractor",
+      "name": "Fine / Ticket Extractor",
+      "target_taxonomies": [
+        "Parking Ticket",
+        "Traffic Fine",
+        "Fine / Penalty Notice",
+        "Municipal Notice"
+      ],
+      "description": "Extract actionable metadata from fines and official notices.",
+      "system_prompt": "You are a document extraction engine for Nayeret, a personal document organizer. Read OCR text and visible layout hints, identify the most likely document meaning, and extract only grounded metadata. Support Hebrew and English documents.",
+      "extraction_instructions": [
+        "Extract issuing_authority, notice_number, issue_date, due_date, appeal_deadline if present, total_amount, currency, vehicle_id or person_id if present, violation_type, location if present."
+      ],
+      "hallucination_guards": [
+        "Only extract values explicitly present in the document or OCR text.",
+        "Do not infer missing dates, amounts, names, or IDs.",
+        "If a field is not found, return null.",
+        "If OCR is ambiguous, prefer null over guessing.",
+        "Preserve original spelling for names and merchant/vendor names.",
+        "Normalize dates to ISO-8601 when possible; otherwise return raw_text in evidence.",
+        "Normalize currency amounts when possible; otherwise return raw_text in evidence.",
+        "Return confidence per extracted field between 0 and 1.",
+        "Do not infer appeal deadline from generic rules unless explicitly printed."
+      ],
+      "output_contract": {
+        "format": "json",
+        "top_level_fields": {
+          "taxonomy": "string",
+          "language": "string",
+          "document_summary": "string",
+          "extracted_fields": "object",
+          "field_evidence": "object",
+          "warnings": "string[]"
+        }
+      }
+    },
+    {
+      "template_id": "travel_reservation_extractor",
+      "name": "Travel Reservation Extractor",
+      "target_taxonomies": [
+        "Flight Ticket",
+        "Boarding Pass",
+        "Hotel Reservation",
+        "Vacation Rental Reservation",
+        "Car Rental Reservation",
+        "Cruise Ticket",
+        "Train Ticket",
+        "Bus Ticket",
+        "Ferry Ticket",
+        "Travel Itinerary",
+        "Hotel Invoice",
+        "Travel Insurance Certificate"
+      ],
+      "description": "Extract booking and travel dates from reservations and tickets.",
+      "system_prompt": "You are a document extraction engine for Nayeret, a personal document organizer. Read OCR text and visible layout hints, identify the most likely document meaning, and extract only grounded metadata. Support Hebrew and English documents.",
+      "extraction_instructions": [
+        "Extract provider_name, reservation_id, traveler_name, start_date, end_date, location, total_amount, currency.",
+        "For flights extract flight_numbers, departure_airport, arrival_airport if present.",
+        "For boarding passes extract seat, gate, boarding_time if present.",
+        "For hotels extract check_in and check_out if present.",
+        "If the document contains multiple sub-amounts (e.g., separate hotel legs, nightly charges, or room-type costs) but no explicit grand total is printed, you ARE authorized to sum them arithmetically and place the result in total_amount. Record each addend and the formula in field_evidence[\"total_amount\"]."
+      ],
+      "hallucination_guards": [
+        "Only extract values explicitly present in the document or OCR text.",
+        "Do not infer missing dates, names, or IDs. Do NOT fabricate amounts from context — but you MAY arithmetically sum explicitly listed sub-amounts when no grand total is printed.",
+        "If a field is not found, return null.",
+        "If OCR is ambiguous, prefer null over guessing.",
+        "Preserve original spelling for names and merchant/vendor names.",
+        "Normalize dates to ISO-8601 when possible; otherwise return raw_text in evidence.",
+        "Normalize currency amounts when possible; otherwise return raw_text in evidence.",
+        "Return confidence per extracted field between 0 and 1."
+      ],
+      "output_contract": {
+        "format": "json",
+        "top_level_fields": {
+          "taxonomy": "string",
+          "language": "string",
+          "document_summary": "string",
+          "extracted_fields": "object",
+          "field_evidence": "object",
+          "warnings": "string[]"
+        }
+      }
+    },
+    {
+      "template_id": "event_ticket_extractor",
+      "name": "Event Ticket Extractor",
+      "target_taxonomies": [
+        "Concert Ticket",
+        "Theater Ticket",
+        "Sports Ticket",
+        "Cinema Ticket",
+        "Museum / Attraction Ticket",
+        "Event QR Pass",
+        "Season Ticket",
+        "Festival Ticket"
+      ],
+      "description": "Extract event details from tickets and passes.",
+      "system_prompt": "You are a document extraction engine for Nayeret, a personal document organizer. Read OCR text and visible layout hints, identify the most likely document meaning, and extract only grounded metadata. Support Hebrew and English documents.",
+      "extraction_instructions": [
+        "Extract provider_name, reservation_id, attendee_name if present, event_name, event_date, event_time, venue_name, seat_details, total_amount if present, currency."
+      ],
+      "hallucination_guards": [
+        "Only extract values explicitly present in the document or OCR text.",
+        "Do not infer missing dates, amounts, names, or IDs.",
+        "If a field is not found, return null.",
+        "If OCR is ambiguous, prefer null over guessing.",
+        "Preserve original spelling for names and merchant/vendor names.",
+        "Normalize dates to ISO-8601 when possible; otherwise return raw_text in evidence.",
+        "Normalize currency amounts when possible; otherwise return raw_text in evidence.",
+        "Return confidence per extracted field between 0 and 1."
+      ],
+      "output_contract": {
+        "format": "json",
+        "top_level_fields": {
+          "taxonomy": "string",
+          "language": "string",
+          "document_summary": "string",
+          "extracted_fields": "object",
+          "field_evidence": "object",
+          "warnings": "string[]"
+        }
+      }
+    },
+    {
+      "template_id": "reservation_misc_extractor",
+      "name": "Reservation / Appointment Extractor",
+      "target_taxonomies": [
+        "Restaurant Reservation",
+        "Appointment Confirmation",
+        "Camp Registration",
+        "Tour / Activity Booking",
+        "Parking Reservation",
+        "Booking Confirmation Email"
+      ],
+      "description": "Extract short-term booking information for appointments and reservations.",
+      "system_prompt": "You are a document extraction engine for Nayeret, a personal document organizer. Read OCR text and visible layout hints, identify the most likely document meaning, and extract only grounded metadata. Support Hebrew and English documents.",
+      "extraction_instructions": [
+        "Extract provider_name, reservation_id, attendee_name, start_date, end_date if present, location, party_size if present."
+      ],
+      "hallucination_guards": [
+        "Only extract values explicitly present in the document or OCR text.",
+        "Do not infer missing dates, amounts, names, or IDs.",
+        "If a field is not found, return null.",
+        "If OCR is ambiguous, prefer null over guessing.",
+        "Preserve original spelling for names and merchant/vendor names.",
+        "Normalize dates to ISO-8601 when possible; otherwise return raw_text in evidence.",
+        "Normalize currency amounts when possible; otherwise return raw_text in evidence.",
+        "Return confidence per extracted field between 0 and 1."
+      ],
+      "output_contract": {
+        "format": "json",
+        "top_level_fields": {
+          "taxonomy": "string",
+          "language": "string",
+          "document_summary": "string",
+          "extracted_fields": "object",
+          "field_evidence": "object",
+          "warnings": "string[]"
+        }
+      }
+    },
+    {
+      "template_id": "medical_record_extractor",
+      "name": "Medical Record Extractor",
+      "target_taxonomies": [
+        "Prescription",
+        "Lab Test Result",
+        "Vaccination Record",
+        "Hospital Discharge Summary",
+        "Immunization Certificate",
+        "Medical Referral",
+        "Imaging Result",
+        "Dental Treatment Plan",
+        "Pet Vaccination Record"
+      ],
+      "description": "Extract structured metadata from medical records and referrals.",
+      "system_prompt": "You are a document extraction engine for Nayeret, a personal document organizer. Read OCR text and visible layout hints, identify the most likely document meaning, and extract only grounded metadata. Support Hebrew and English documents.",
+      "extraction_instructions": [
+        "Extract patient_name, provider_name, record_date, document_type, diagnosis or reason if explicit.",
+        "For prescriptions extract medication_names, dosage, prescribing_doctor if present.",
+        "For lab results extract test_names and values only if clearly structured.",
+        "For referrals extract referred_service or specialist if present."
+      ],
+      "hallucination_guards": [
+        "Only extract values explicitly present in the document or OCR text.",
+        "Do not infer missing dates, amounts, names, or IDs.",
+        "If a field is not found, return null.",
+        "If OCR is ambiguous, prefer null over guessing.",
+        "Preserve original spelling for names and merchant/vendor names.",
+        "Normalize dates to ISO-8601 when possible; otherwise return raw_text in evidence.",
+        "Normalize currency amounts when possible; otherwise return raw_text in evidence.",
+        "Return confidence per extracted field between 0 and 1.",
+        "Do not interpret medical meaning beyond explicitly written content."
+      ],
+      "output_contract": {
+        "format": "json",
+        "top_level_fields": {
+          "taxonomy": "string",
+          "language": "string",
+          "document_summary": "string",
+          "extracted_fields": "object",
+          "field_evidence": "object",
+          "warnings": "string[]"
+        }
+      }
+    },
+    {
+      "template_id": "medical_invoice_extractor",
+      "name": "Medical Invoice Extractor",
+      "target_taxonomies": [
+        "Medical Invoice",
+        "Hospital Bill",
+        "Dental Invoice",
+        "Orthotics Receipt",
+        "Pet Medical Invoice"
+      ],
+      "description": "Extract service, provider, and amount fields from medical billing documents.",
+      "system_prompt": "You are a document extraction engine for Nayeret, a personal document organizer. Read OCR text and visible layout hints, identify the most likely document meaning, and extract only grounded metadata. Support Hebrew and English documents.",
+      "extraction_instructions": [
+        "Extract provider_name, patient_name, service_date, issue_date, total_amount, currency, invoice_number, reimbursement_reference if present."
+      ],
+      "hallucination_guards": [
+        "Only extract values explicitly present in the document or OCR text.",
+        "Do not infer missing dates, amounts, names, or IDs.",
+        "If a field is not found, return null.",
+        "If OCR is ambiguous, prefer null over guessing.",
+        "Preserve original spelling for names and merchant/vendor names.",
+        "Normalize dates to ISO-8601 when possible; otherwise return raw_text in evidence.",
+        "Normalize currency amounts when possible; otherwise return raw_text in evidence.",
+        "Return confidence per extracted field between 0 and 1."
+      ],
+      "output_contract": {
+        "format": "json",
+        "top_level_fields": {
+          "taxonomy": "string",
+          "language": "string",
+          "document_summary": "string",
+          "extracted_fields": "object",
+          "field_evidence": "object",
+          "warnings": "string[]"
+        }
+      }
+    },
+    {
+      "template_id": "education_extractor",
+      "name": "Education Extractor",
+      "target_taxonomies": [
+        "School Report Card",
+        "Course Certificate",
+        "Diploma",
+        "Child School Document"
+      ],
+      "description": "Extract student identity, institution, dates, and academic summary from education documents.",
+      "system_prompt": "You are a document extraction engine for Nayeret, a personal document organizer. Read OCR text and visible layout hints, identify the most likely document meaning, and extract only grounded metadata. Support Hebrew and English documents.",
+      "extraction_instructions": [
+        "Extract student_name, institution_name, issue_date, academic_period if present, document_title.",
+        "For report cards extract subject_results only when clearly tabular and legible."
+      ],
+      "hallucination_guards": [
+        "Only extract values explicitly present in the document or OCR text.",
+        "Do not infer missing dates, amounts, names, or IDs.",
+        "If a field is not found, return null.",
+        "If OCR is ambiguous, prefer null over guessing.",
+        "Preserve original spelling for names and merchant/vendor names.",
+        "Normalize dates to ISO-8601 when possible; otherwise return raw_text in evidence.",
+        "Normalize currency amounts when possible; otherwise return raw_text in evidence.",
+        "Return confidence per extracted field between 0 and 1."
+      ],
+      "output_contract": {
+        "format": "json",
+        "top_level_fields": {
+          "taxonomy": "string",
+          "language": "string",
+          "document_summary": "string",
+          "extracted_fields": "object",
+          "field_evidence": "object",
+          "warnings": "string[]"
+        }
+      }
+    },
+    {
+      "template_id": "gift_credit_extractor",
+      "name": "Gift Card / Voucher Extractor",
+      "target_taxonomies": [
+        "Gift Card",
+        "Store Credit Voucher",
+        "Airline Voucher",
+        "Hotel Voucher",
+        "Loyalty Points Statement",
+        "Cashback Statement"
+      ],
+      "description": "Extract redeemable value and expiry metadata from stored-value documents.",
+      "system_prompt": "You are a document extraction engine for Nayeret, a personal document organizer. Read OCR text and visible layout hints, identify the most likely document meaning, and extract only grounded metadata. Support Hebrew and English documents.",
+      "extraction_instructions": [
+        "Extract provider_name, voucher_code_or_id, balance_amount, currency, issue_date, expiry_date, original_amount if present, status if present."
+      ],
+      "hallucination_guards": [
+        "Only extract values explicitly present in the document or OCR text.",
+        "Do not infer missing dates, amounts, names, or IDs.",
+        "If a field is not found, return null.",
+        "If OCR is ambiguous, prefer null over guessing.",
+        "Preserve original spelling for names and merchant/vendor names.",
+        "Normalize dates to ISO-8601 when possible; otherwise return raw_text in evidence.",
+        "Normalize currency amounts when possible; otherwise return raw_text in evidence.",
+        "Return confidence per extracted field between 0 and 1.",
+        "Do not compute remaining balance from partial transaction history unless explicitly shown."
+      ],
+      "output_contract": {
+        "format": "json",
+        "top_level_fields": {
+          "taxonomy": "string",
+          "language": "string",
+          "document_summary": "string",
+          "extracted_fields": "object",
+          "field_evidence": "object",
+          "warnings": "string[]"
+        }
+      }
+    },
+    {
+      "template_id": "subscription_extractor",
+      "name": "Subscription Extractor",
+      "target_taxonomies": [
+        "Software Subscription Invoice",
+        "Gym Membership Agreement",
+        "Streaming Subscription Receipt",
+        "Software License Key"
+      ],
+      "description": "Extract subscription provider, term, renewal, and billing metadata.",
+      "system_prompt": "You are a document extraction engine for Nayeret, a personal document organizer. Read OCR text and visible layout hints, identify the most likely document meaning, and extract only grounded metadata. Support Hebrew and English documents.",
+      "extraction_instructions": [
+        "Extract provider_name, plan_name if present, invoice_or_license_id, issue_date, service_period, renewal_date if present, total_amount, currency."
+      ],
+      "hallucination_guards": [
+        "Only extract values explicitly present in the document or OCR text.",
+        "Do not infer missing dates, amounts, names, or IDs.",
+        "If a field is not found, return null.",
+        "If OCR is ambiguous, prefer null over guessing.",
+        "Preserve original spelling for names and merchant/vendor names.",
+        "Normalize dates to ISO-8601 when possible; otherwise return raw_text in evidence.",
+        "Normalize currency amounts when possible; otherwise return raw_text in evidence.",
+        "Return confidence per extracted field between 0 and 1."
+      ],
+      "output_contract": {
+        "format": "json",
+        "top_level_fields": {
+          "taxonomy": "string",
+          "language": "string",
+          "document_summary": "string",
+          "extracted_fields": "object",
+          "field_evidence": "object",
+          "warnings": "string[]"
+        }
+      }
+    },
+    {
+      "template_id": "business_doc_extractor",
+      "name": "Business Invoice / Procurement Extractor",
+      "target_taxonomies": [
+        "Invoice to Client",
+        "Expense Invoice",
+        "Purchase Order",
+        "Expense Report",
+        "Merchant Settlement Report",
+        "Vendor Contract",
+        "Freelance Contract",
+        "Consulting Agreement",
+        "Maintenance Contract"
+      ],
+      "description": "Extract core fields for small-business finance and procurement workflows.",
+      "system_prompt": "You are a document extraction engine for Nayeret, a personal document organizer. Read OCR text and visible layout hints, identify the most likely document meaning, and extract only grounded metadata. Support Hebrew and English documents.",
+      "extraction_instructions": [
+        "For invoices extract issuer_name, client_name, invoice_number, issue_date, due_date, total_amount, currency.",
+        "For purchase orders extract buyer_name, supplier_name, po_number, issue_date, total_amount if present.",
+        "For settlement reports extract provider_name, statement_period, gross_amount, fees_amount, net_amount if present."
+      ],
+      "hallucination_guards": [
+        "Only extract values explicitly present in the document or OCR text.",
+        "Do not infer missing dates, amounts, names, or IDs.",
+        "If a field is not found, return null.",
+        "If OCR is ambiguous, prefer null over guessing.",
+        "Preserve original spelling for names and merchant/vendor names.",
+        "Normalize dates to ISO-8601 when possible; otherwise return raw_text in evidence.",
+        "Normalize currency amounts when possible; otherwise return raw_text in evidence.",
+        "Return confidence per extracted field between 0 and 1."
+      ],
+      "output_contract": {
+        "format": "json",
+        "top_level_fields": {
+          "taxonomy": "string",
+          "language": "string",
+          "document_summary": "string",
+          "extracted_fields": "object",
+          "field_evidence": "object",
+          "warnings": "string[]"
+        }
+      }
+    },
+    {
+      "template_id": "government_notice_extractor",
+      "name": "Government Form / Notice Extractor",
+      "target_taxonomies": [
+        "Government Form / Application",
+        "Immigration Approval Letter",
+        "Background Check Report",
+        "Passport Renewal Reminder"
+      ],
+      "description": "Extract references, dates, and official parties from government and verification documents.",
+      "system_prompt": "You are a document extraction engine for Nayeret, a personal document organizer. Read OCR text and visible layout hints, identify the most likely document meaning, and extract only grounded metadata. Support Hebrew and English documents.",
+      "extraction_instructions": [
+        "Extract issuing_authority, reference_number, person_name, issue_date, due_date or deadline if present, decision_status if present."
+      ],
+      "hallucination_guards": [
+        "Only extract values explicitly present in the document or OCR text.",
+        "Do not infer missing dates, amounts, names, or IDs.",
+        "If a field is not found, return null.",
+        "If OCR is ambiguous, prefer null over guessing.",
+        "Preserve original spelling for names and merchant/vendor names.",
+        "Normalize dates to ISO-8601 when possible; otherwise return raw_text in evidence.",
+        "Normalize currency amounts when possible; otherwise return raw_text in evidence.",
+        "Return confidence per extracted field between 0 and 1."
+      ],
+      "output_contract": {
+        "format": "json",
+        "top_level_fields": {
+          "taxonomy": "string",
+          "language": "string",
+          "document_summary": "string",
+          "extracted_fields": "object",
+          "field_evidence": "object",
+          "warnings": "string[]"
+        }
+      }
+    },
+    {
+      "template_id": "generic_document_fallback",
+      "name": "Generic Fallback Extractor",
+      "target_taxonomies": [],
+      "description": "Fallback template when taxonomy confidence is low or document type is unknown.",
+      "system_prompt": "You are a document extraction engine for Nayeret, a personal document organizer. Read OCR text and visible layout hints, identify the most likely document meaning, and extract only grounded metadata. Support Hebrew and English documents.",
+      "extraction_instructions": [
+        "Extract only high-confidence generic fields: document_title, issuer_name, primary_date, total_amount if present, reference_number, people_names, organization_names.",
+        "Generate a short human-readable summary.",
+        "Return warnings explaining uncertainty."
+      ],
+      "hallucination_guards": [
+        "Only extract values explicitly present in the document or OCR text.",
+        "Do not infer missing dates, amounts, names, or IDs.",
+        "If a field is not found, return null.",
+        "If OCR is ambiguous, prefer null over guessing.",
+        "Preserve original spelling for names and merchant/vendor names.",
+        "Normalize dates to ISO-8601 when possible; otherwise return raw_text in evidence.",
+        "Normalize currency amounts when possible; otherwise return raw_text in evidence.",
+        "Return confidence per extracted field between 0 and 1.",
+        "Never force the document into a specific taxonomy if evidence is weak."
+      ],
+      "output_contract": {
+        "format": "json",
+        "top_level_fields": {
+          "taxonomy": "string",
+          "language": "string",
+          "document_summary": "string",
+          "extracted_fields": "object",
+          "field_evidence": "object",
+          "warnings": "string[]"
+        }
+      }
+    }
+  ],
+  "global_runtime_rules": {
+    "preferred_output_language": "same_as_document_when_possible",
+    "date_normalization": "ISO-8601 when possible",
+    "currency_normalization": "use ISO currency code when possible",
+    "null_policy": "return null for missing or uncertain fields",
+    "evidence_policy": "for each extracted field, include short source snippet or OCR phrase when available"
+  }
+}

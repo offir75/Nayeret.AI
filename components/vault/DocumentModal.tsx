@@ -1,12 +1,12 @@
 import { useState, useEffect, useMemo } from 'react';
 import { X, Check, AlertCircle } from 'lucide-react';
 import { useSettings } from '@/lib/context/settings';
-import type { VaultDoc, DocumentType } from '@/lib/types';
+import type { VaultDoc } from '@/lib/types';
 import { translations } from '@/lib/vault/translations';
 import { updateDocument } from '@/lib/services/documents';
 import {
-  DOC_TYPES, DOC_TYPE_LABELS, EDITABLE_FIELDS, FIELD_META, initDrafts,
-  getInsightFields, labelFromKey,
+  DOC_TYPES, DOC_TYPE_LABELS, LEGACY_DOC_TYPE_SET, FIELD_META, initDrafts,
+  getInsightFields, labelFromKey, getTypeLabel, getEditableFields, normalizeSource,
 } from '@/lib/vault/fieldMeta';
 
 // ─── Skeleton ─────────────────────────────────────────────────────────────────
@@ -40,19 +40,25 @@ export default function DocumentModal({ doc, token, onClose, onUpdate }: Props) 
   const [viewerLoaded, setViewerLoaded] = useState(false);
 
   // ── Edit state ──────────────────────────────────────────────────────────────
-  const [typeDraft, setTypeDraft] = useState<DocumentType>(doc.document_type);
+  const [typeDraft, setTypeDraft] = useState<string>(doc.document_type);
   const [drafts, setDrafts] = useState<Record<string, string>>(() => initDrafts(doc.raw_analysis, doc.insights));
   const [notesDraft, setNotesDraft] = useState(doc.user_notes ?? '');
   const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
 
   const isProcessing = !doc.raw_analysis;
 
+  // Same source preference as initDrafts: insights first, then raw_analysis — normalized to canonical keys
+  const docSource = useMemo(() => {
+    const ins = doc.insights as Record<string, unknown> | null | undefined;
+    const raw = (ins && Object.keys(ins).length > 0 ? ins : doc.raw_analysis) ?? {};
+    return normalizeSource(raw as Record<string, unknown>);
+  }, [doc]);
+
   const isDirty = useMemo(() => {
     if (typeDraft !== doc.document_type) return true;
     if (notesDraft !== (doc.user_notes ?? '')) return true;
-    const ra = doc.raw_analysis ?? {};
-    return Object.entries(drafts).some(([key, val]) => val !== (ra[key] != null ? String(ra[key]) : ''));
-  }, [drafts, notesDraft, typeDraft, doc]);
+    return Object.entries(drafts).some(([key, val]) => val !== (docSource[key] != null ? String(docSource[key]) : ''));
+  }, [drafts, notesDraft, typeDraft, doc, docSource]);
 
   // ── Keyboard close ──────────────────────────────────────────────────────────
   useEffect(() => {
@@ -66,7 +72,7 @@ export default function DocumentModal({ doc, token, onClose, onUpdate }: Props) 
     setSaveStatus('saving');
     try {
       const rawPatch: Record<string, unknown> = {};
-      for (const key of EDITABLE_FIELDS[typeDraft] ?? []) {
+      for (const key of getEditableFields(typeDraft)) {
         rawPatch[key] = drafts[key] === '' ? null : drafts[key];
       }
       const updated = await updateDocument(doc.id, {
@@ -89,8 +95,7 @@ export default function DocumentModal({ doc, token, onClose, onUpdate }: Props) 
 
     const label = meta ? meta[lang] : labelFromKey(key);
     const val = drafts[key] ?? '';
-    const ra = doc.raw_analysis ?? {};
-    const original = ra[key] != null ? String(ra[key]) : '';
+    const original = docSource[key] != null ? String(docSource[key]) : '';
     const isModified = val !== original;
     const isAiExtracted = original !== '';
 
@@ -120,6 +125,7 @@ export default function DocumentModal({ doc, token, onClose, onUpdate }: Props) 
           type={meta?.type === 'date' ? 'date' : meta?.type === 'number' ? 'number' : 'text'}
           value={val}
           onChange={e => setDrafts(prev => ({ ...prev, [key]: e.target.value }))}
+          onClick={meta?.type === 'date' ? e => { try { (e.currentTarget as HTMLInputElement).showPicker(); } catch {} } : undefined}
           placeholder={isAiExtracted ? original : '—'}
           step={meta?.type === 'number' ? 'any' : undefined}
           className={inputBase}
@@ -143,8 +149,11 @@ export default function DocumentModal({ doc, token, onClose, onUpdate }: Props) 
   }
 
   // ── Edit panel ──────────────────────────────────────────────────────────────
-  const insightFields = getInsightFields(doc.insights ?? doc.raw_analysis);
-  const currentFields = insightFields.length > 0 ? insightFields : (EDITABLE_FIELDS[typeDraft] ?? []);
+  // Always show all editable fields for the type; supplement with any extra AI-extracted keys
+  const insightFields = getInsightFields(docSource);
+  const editableKeys = getEditableFields(typeDraft);
+  const extraFields = insightFields.filter(k => !editableKeys.includes(k));
+  const currentFields = editableKeys.length > 0 ? [...editableKeys, ...extraFields] : insightFields;
 
   const editPanel = (
     <div className="flex flex-col h-full" dir={lang === 'he' ? 'rtl' : 'ltr'}>
@@ -157,9 +166,13 @@ export default function DocumentModal({ doc, token, onClose, onUpdate }: Props) 
           </label>
           <select
             value={typeDraft}
-            onChange={e => setTypeDraft(e.target.value as DocumentType)}
+            onChange={e => setTypeDraft(e.target.value)}
             className="w-full bg-zinc-800 text-white text-sm px-3 py-2 rounded-lg border border-zinc-700 focus:outline-none focus:border-zen-sage/60 transition-colors cursor-pointer"
           >
+            {/* Free-form taxonomy type — show as first option when not a legacy enum value */}
+            {!LEGACY_DOC_TYPE_SET.has(typeDraft) && (
+              <option key={typeDraft} value={typeDraft}>{getTypeLabel(typeDraft, lang, (doc.insights?.document_type_name_he ?? doc.raw_analysis?.document_type_name_he) as string | null | undefined)}</option>
+            )}
             {DOC_TYPES.map(t => (
               <option key={t} value={t}>{DOC_TYPE_LABELS[t][lang]}</option>
             ))}
@@ -237,7 +250,7 @@ export default function DocumentModal({ doc, token, onClose, onUpdate }: Props) 
 
   // ── Render ──────────────────────────────────────────────────────────────────
   return (
-    <div className="fixed inset-0 z-[60] flex flex-col bg-zinc-950">
+    <div className="fixed inset-0 z-[80] flex flex-col bg-zinc-950">
 
       {/* Header */}
       <div className="flex items-center justify-between px-4 py-3 bg-zinc-900/80 border-b border-white/10 flex-shrink-0 gap-3">
