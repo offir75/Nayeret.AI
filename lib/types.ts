@@ -10,6 +10,7 @@ export interface VaultDoc {
   summary_he: string | null;
   summary_en: string | null;
   raw_analysis: Record<string, unknown> | null;
+  insights: Record<string, unknown> | null;
   thumbnail_url: string | null;
   created_at: string;
   user_notes: string | null;

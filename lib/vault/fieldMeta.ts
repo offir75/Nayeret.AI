@@ -46,12 +46,34 @@ export const FIELD_META: Record<string, { en: string; he: string; type: FieldTyp
   id_number:      { en: 'ID Number',      he: 'מספר ת.ז.',      type: 'text'     },
 };
 
-/** Initialize a drafts map from a doc's raw_analysis (all known keys). */
-export function initDrafts(rawAnalysis: Record<string, unknown> | null): Record<string, string> {
-  const ra = rawAnalysis ?? {};
+/** Initialize a drafts map, preferring insights over raw_analysis. Includes all keys. */
+export function initDrafts(
+  rawAnalysis: Record<string, unknown> | null,
+  insights?: Record<string, unknown> | null,
+): Record<string, string> {
+  const source = (insights && Object.keys(insights).length > 0 ? insights : rawAnalysis) ?? {};
   const result: Record<string, string> = {};
+  const SKIP = new Set(['is_media', 'document_type_name']);
   Object.keys(FIELD_META).forEach(key => {
-    result[key] = ra[key] != null ? String(ra[key]) : '';
+    result[key] = source[key] != null ? String(source[key]) : '';
+  });
+  Object.keys(source).forEach(key => {
+    if (!(key in result) && !SKIP.has(key)) {
+      result[key] = source[key] != null ? String(source[key]) : '';
+    }
   });
   return result;
+}
+
+const SKIP_KEYS = new Set(['is_media', 'document_type_name']);
+
+/** Return the non-empty, non-meta field keys present in insights. */
+export function getInsightFields(insights: Record<string, unknown> | null | undefined): string[] {
+  if (!insights) return [];
+  return Object.keys(insights).filter(k => !SKIP_KEYS.has(k) && insights[k] != null && insights[k] !== '');
+}
+
+/** Convert a snake_case key to a human-readable Title Case label. */
+export function labelFromKey(key: string): string {
+  return key.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
 }

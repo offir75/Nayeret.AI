@@ -3,15 +3,31 @@ import { supabaseAdmin } from '@/supabase/client';
 import { getUserIdFromRequest } from '@/lib/services/auth';
 import { downloadFile } from '@/lib/services/storage';
 import {
-  IMAGE_EXTENSIONS, MIME_MAP, getExt, toDocumentType,
+  IMAGE_EXTENSIONS, MIME_MAP, getExt,
   callGemini, ocrImage, ocrPdfFallback, describeImage,
-  summarizeDocument, classifyDocument, extractMetadata,
+  summarizeDocument, classifyAgainstTypes, extractStructured,
+  DocumentTypeRow,
 } from '@/lib/services/ai';
 import type { DocumentType } from '@/lib/types';
 
 // eslint-disable-next-line @typescript-eslint/no-require-imports
-// Use lib directly to bypass index.js debug code that breaks under webpack/Next.js
 const pdfParse = require('pdf-parse/lib/pdf-parse.js');
+
+// ── Name → legacy DocumentType mapping (keeps UI backwards-compatible) ─────────
+
+const NAME_TO_DOC_TYPE: Record<string, DocumentType> = {
+  'financial report':  'financial_report',
+  'bill':              'bill',
+  'receipt':           'receipt',
+  'insurance policy':  'insurance',
+  'identity':          'identification',
+  'claim':             'claim',
+  'other':             'other',
+};
+
+function nameToDocumentType(name: string): DocumentType {
+  return NAME_TO_DOC_TYPE[name.toLowerCase()] ?? 'other';
+}
 
 // ── Tier 2: Semantic duplicate detection ──────────────────────────────────────
 
@@ -64,15 +80,20 @@ async function findSemanticDuplicate(
   return null;
 }
 
+// ── Handler ───────────────────────────────────────────────────────────────────
+
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   if (req.method !== 'POST') {
-    return res.status(405).json({ error: 'Method not allowed' });
+    res.status(405).json({ error: 'Method not allowed' })
+
+    return;
   }
 
-  // ── Auth ──────────────────────────────────────────────────────────────────
   const userId = await getUserIdFromRequest(req);
   if (!userId) {
-    return res.status(401).json({ error: 'Unauthorized — please sign in' });
+    res.status(401).json({ error: 'Unauthorized — please sign in' })
+
+    return;
   }
 
   try {
@@ -80,7 +101,9 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       filename: string; mimeType?: string; fileHash?: string; originalFilename?: string;
     };
     if (!filename) {
-      return res.status(400).json({ error: 'Missing filename' });
+      res.status(400).json({ error: 'Missing filename' })
+
+      return;
     }
 
     // 1. Download file from Supabase Storage
@@ -89,30 +112,36 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     try {
       fileBuffer = await downloadFile('documents', storagePath);
     } catch (err) {
-      return res.status(422).json({ error: 'Could not read file from storage', details: String(err) });
+      res.status(422).json({ error: 'Could not read file from storage', details: String(err) });
+
+      return;
     }
     if (!fileBuffer?.length) {
-      return res.status(422).json({ error: 'File buffer is empty' });
+      res.status(422).json({ error: 'File buffer is empty' })
+
+      return;
     }
 
-    // 2. Extract text — Gemini OCR for images, pdf-parse for PDFs
+    // 2. Extract text — Gemini OCR for images, pdf-parse → Gemini for PDFs
     let text: string;
     const ext = getExt(filename);
-    // Prefer the MIME type reported by the browser (handles iOS HEIC→JPEG conversion
-    // where the filename keeps .heic but the content is actually JPEG)
     const isImage = IMAGE_EXTENSIONS.has(ext) || (clientMimeType && clientMimeType.startsWith('image/'));
+
     if (isImage) {
-      const mimeType = (clientMimeType && clientMimeType.startsWith('image/')) ? clientMimeType : (MIME_MAP[ext] ?? 'image/jpeg');
+      const mimeType = (clientMimeType && clientMimeType.startsWith('image/'))
+        ? clientMimeType
+        : (MIME_MAP[ext] ?? 'image/jpeg');
       try {
         text = await ocrImage(fileBuffer, mimeType);
       } catch (err) {
         console.error('Gemini OCR failed:', err);
-        return res.status(422).json({ error: 'Image OCR failed', details: String(err) });
+        res.status(422).json({ error: 'Image OCR failed', details: String(err) });
+
+        return;
       }
       if (!text) {
-        // No text found — describe the image visually and save as media
+        // No text — visual media path
         const mediaSummaries = await describeImage(fileBuffer, mimeType);
-
         const { data: mediaData } = await supabaseAdmin
           .from('documents')
           .upsert([{
@@ -120,23 +149,24 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
             document_type: 'other',
             summary_he: mediaSummaries.he, summary_en: mediaSummaries.en,
             raw_analysis: { is_media: true },
+            insights: { is_media: true },
             ...(fileHash ? { file_hash: fileHash } : {}),
             ...(originalFilename ? { original_filename: originalFilename } : {}),
           }], { onConflict: 'file_name,owner_id' })
           .select();
-        return res.status(200).json({
+        res.status(200).json({
           success: true, filename,
           summary_he: mediaSummaries.he, summary_en: mediaSummaries.en,
           document_group: 'Other', document_type: 'other',
           raw_metadata: { is_media: true },
           supabaseId: mediaData?.[0]?.id ?? null,
-          is_media: true,
-          semanticMatch: null,
-        });
+          is_media: true, semanticMatch: null,
+        })
+
+        return;
       }
     } else {
-      // PDF — try pdf-parse first, fall back to Gemini OCR for scanned/image-based PDFs
-      //       Also fall back if pdf-parse throws (some encoded/complex PDFs crash it)
+      // PDF — try pdf-parse, fall back to Gemini OCR on failure or empty result
       try {
         const pdfData = await pdfParse(fileBuffer);
         text = pdfData.text || '';
@@ -145,33 +175,43 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         text = '';
       }
       if (!text.trim()) {
-        // Scanned, image-based, or crash-causing PDF — fall back to Gemini OCR
         console.warn('pdf-parse returned no text, falling back to Gemini OCR:', filename);
         try {
           text = await ocrPdfFallback(fileBuffer);
         } catch (err) {
           console.error('Gemini PDF OCR failed:', err);
-          return res.status(422).json({ error: 'Could not extract text from PDF (OCR fallback also failed)', details: String(err) });
+          res.status(422).json({ error: 'Could not extract text from PDF (OCR fallback also failed)', details: String(err) });
+
+          return;
         }
         if (!text) {
-          return res.status(422).json({ error: 'Could not extract any text from PDF' });
+          res.status(422).json({ error: 'Could not extract any text from PDF' })
+
+          return;
         }
       }
     }
 
-    // 3. Triage: is this a real document or a logo/photo/meme?
+    // 3. Triage: is this a real document (not a photo/meme/logo)?
     const triageResult = await callGemini(
       `Is the following text extracted from a financial, legal, identity, or business document ` +
-      `(bill, bank report, insurance policy, receipt, claim, ID, passport, contract)?\n` +
-      `Answer ONLY "yes" or "no".\n\nText:\n${text.slice(0, 2000)}`
+      `(bill, bank report, insurance policy, receipt, claim, ID, passport, contract)?
+` +
+      `Answer ONLY "yes" or "no".
+
+Text:
+${text.slice(0, 2000)}`
     );
     if (!triageResult.toLowerCase().startsWith('y')) {
       const onelinerRaw = await callGemini(
-        `In one sentence, describe what this content appears to be.\n` +
-        `Return a JSON object with exactly two keys:\n` +
-        `  "he": the description in Hebrew\n` +
-        `  "en": the description in English\n` +
-        `Return only the JSON object, no other text.\n\nText:\n${text.slice(0, 1000)}`,
+        `In one sentence, describe what this content appears to be.
+` +
+        `Return a JSON object with exactly two keys: "he" (Hebrew) and "en" (English).
+` +
+        `Return only the JSON object.
+
+Text:
+${text.slice(0, 1000)}`,
         true
       );
       let mediaSummaries: { he: string; en: string };
@@ -188,32 +228,60 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
           document_type: 'other',
           summary_he: mediaSummaries.he, summary_en: mediaSummaries.en,
           raw_analysis: { is_media: true },
+          insights: { is_media: true },
           ...(fileHash ? { file_hash: fileHash } : {}),
           ...(originalFilename ? { original_filename: originalFilename } : {}),
         }], { onConflict: 'file_name,owner_id' })
         .select();
-      return res.status(200).json({
+      res.status(200).json({
         success: true, filename,
         summary_he: mediaSummaries.he, summary_en: mediaSummaries.en,
         document_group: 'Other', document_type: 'other',
         raw_metadata: { is_media: true },
         supabaseId: mediaData?.[0]?.id ?? null,
-        is_media: true,
-        semanticMatch: null,
-      });
+        is_media: true, semanticMatch: null,
+      })
+
+      return;
     }
 
-    // 4. Bilingual summarization
+    // 4. Fetch active document types from DB (Phase 1 input)
+    const { data: dbTypes, error: typesError } = await supabaseAdmin
+      .from('document_types')
+      .select('name, matching_description, schema_definition')
+      .eq('is_active', true);
+
+    if (typesError) {
+      console.error('Failed to fetch document_types:', typesError.message);
+    }
+    const activeTypes: DocumentTypeRow[] = (dbTypes ?? []) as DocumentTypeRow[];
+
+    // 5. PHASE 1 — Classify against DB types
+    let matchedTypeName = 'Other';
+    let matchedRow: DocumentTypeRow | undefined; // הגדרה מחוץ לבלוק כדי שתהיה נגישה לשלב הבא
+
+    if (activeTypes.length > 0) {
+      matchedTypeName = await classifyAgainstTypes(text, activeTypes);
+      matchedRow = activeTypes.find(t => t.name === matchedTypeName);
+    }
+
+    const document_type = nameToDocumentType(matchedTypeName);
+
+    // 6. PHASE 2 — Structured extraction using the FULL schema
+    let insights: Record<string, unknown> = {};
+
+    const schemaFields: string[] = matchedRow?.schema_definition?.fields ?? [];
+    if (schemaFields.length > 0) {
+      insights = await extractStructured(text, schemaFields);
+    }
+
+    // Attach classification metadata to insights
+    insights.document_type_name = matchedTypeName;
+
+    // 7. Bilingual Zen summary
     const summaries = await summarizeDocument(text);
 
-    // 5. Classify into one of the supported categories
-    const document_group = await classifyDocument(summaries.en, text);
-    const document_type = toDocumentType(document_group);
-
-    // 6. Extract structured metadata per category
-    const raw_metadata = await extractMetadata(document_type, text);
-
-    // 7. Persist to Supabase — upsert per (file_name, owner_id) so re-uploads update in place
+    // 8. Persist — write to both raw_analysis (UI compat) and insights (new column)
     const { data: supaData, error: supaError } = await supabaseAdmin
       .from('documents')
       .upsert(
@@ -223,7 +291,8 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
           document_type,
           summary_he: summaries.he,
           summary_en: summaries.en,
-          raw_analysis: raw_metadata,
+          raw_analysis: insights,
+          insights,
           ...(fileHash ? { file_hash: fileHash } : {}),
           ...(originalFilename ? { original_filename: originalFilename } : {}),
         }],
@@ -233,31 +302,39 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
     if (supaError) {
       console.error('Supabase upsert error:', supaError);
-      return res.status(500).json({ error: 'Failed to save to database', details: supaError.message });
+      res.status(500).json({ error: 'Failed to save to database', details: supaError.message })
+
+      return;
     }
 
-    // 8. Tier 2: Semantic duplicate check (catches duplicates with different filenames)
-    const semanticMatch = await findSemanticDuplicate(userId, document_type, raw_metadata, filename);
+    // 9. Tier 2 semantic duplicate check
+    const semanticMatch = await findSemanticDuplicate(userId, document_type, insights, filename);
     if (semanticMatch) {
       console.log('[dedup] Semantic match found:', semanticMatch.id, 'for new doc:', filename);
     }
 
-    return res.status(200).json({
+    res.status(200).json({
       success: true,
       filename,
       summary_he: summaries.he,
       summary_en: summaries.en,
-      document_group,
+      document_group: matchedTypeName,
       document_type,
-      raw_metadata,
+      raw_metadata: insights,
       supabaseId: supaData?.[0]?.id ?? null,
       semanticMatch: semanticMatch ?? null,
-    });
+    })
+
+
+    return;
+
   } catch (error) {
     console.error('Analysis error:', error);
-    return res.status(500).json({
+    res.status(500).json({
       error: 'Failed to analyze file',
       details: error instanceof Error ? error.message : 'Unknown error',
-    });
+    })
+
+    return;
   }
 }

@@ -4,15 +4,24 @@ import { getUserIdFromToken } from '@/lib/services/auth';
 import { createSignedUrl } from '@/lib/services/storage';
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
-  if (req.method !== 'GET') return res.status(405).end();
+  if (req.method !== 'GET') {
+    res.status(405).end();
+    return;
+  }
 
   // Token passed as query param so <iframe> can load it without custom headers
   const token = req.query.t as string;
   const id    = req.query.id as string;
-  if (!token || !id) return res.status(400).json({ error: 'Missing id or t' });
+  if (!token || !id) {
+    res.status(400).json({ error: 'Missing id or t' });
+    return;
+  }
 
   const userId = await getUserIdFromToken(token);
-  if (!userId) return res.status(401).json({ error: 'Unauthorized' });
+  if (!userId) {
+    res.status(401).json({ error: 'Unauthorized' });
+    return;
+  }
 
   // Verify ownership + get file_name
   const { data: doc, error: docError } = await supabaseAdmin
@@ -22,15 +31,18 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     .single();
 
   if (docError || !doc || doc.owner_id !== userId) {
-    return res.status(403).json({ error: 'Access denied' });
+    res.status(403).json({ error: 'Access denied' });
+    return;
   }
 
   // Create a short-lived signed URL from Supabase Storage
   const storagePath = `${doc.owner_id}/${doc.file_name}`;
   try {
     const signedUrl = await createSignedUrl('documents', storagePath, 3600);
-    return res.redirect(302, signedUrl);
+    res.redirect(302, signedUrl);
+    return;
   } catch {
-    return res.status(404).json({ error: 'File not found in storage' });
+    res.status(404).json({ error: 'File not found in storage' });
+    return;
   }
 }

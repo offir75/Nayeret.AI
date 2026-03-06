@@ -1,14 +1,15 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { Drawer } from 'vaul';
-import { X, Trash2, Share2, CheckCircle2, FileText } from 'lucide-react';
+import { X, Trash2, Share2, CheckCircle2, ChevronLeft, ChevronRight } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useSettings } from '@/lib/context/settings';
 import type { VaultDoc, DocumentType } from '@/lib/types';
 import { typeConfig } from './CategoryBadge';
-import { EDITABLE_FIELDS, FIELD_META, DOC_TYPES, DOC_TYPE_LABELS, initDrafts } from '@/lib/vault/fieldMeta';
+import { EDITABLE_FIELDS, FIELD_META, DOC_TYPES, DOC_TYPE_LABELS, initDrafts, getInsightFields, labelFromKey } from '@/lib/vault/fieldMeta';
 import { deleteDocument, updateDocument } from '@/lib/services/documents';
 import { convertAmount, fmtMoney } from '@/lib/vault/helpers';
+import DocumentModal from './DocumentModal';
 
 interface Props {
   doc: VaultDoc | null;
@@ -17,36 +18,68 @@ interface Props {
   onClose: () => void;
   onUpdate: (updated: VaultDoc) => void;
   onDelete: (id: string) => void;
+  hasPrev?: boolean;
+  hasNext?: boolean;
+  onPrev?: () => void;
+  onNext?: () => void;
 }
 
 type SaveState = 'idle' | 'saving' | 'saved' | 'error';
 
-export default function DocumentDrawer({ doc, token, open, onClose, onUpdate, onDelete }: Props) {
+export default function DocumentDrawer({
+  doc, token, open, onClose, onUpdate, onDelete,
+  hasPrev, hasNext, onPrev, onNext,
+}: Props) {
   const { lang, currency } = useSettings();
 
-  const [drafts, setDrafts]             = useState<Record<string, string>>({});
-  const [draftType, setDraftType]       = useState<DocumentType>('other');
-  const [draftNotes, setDraftNotes]     = useState('');
-  const [saveState, setSaveState]       = useState<SaveState>('idle');
+  const [drafts, setDrafts]               = useState<Record<string, string>>({});
+  const [draftType, setDraftType]         = useState<DocumentType>('other');
+  const [draftNotes, setDraftNotes]       = useState('');
+  const [saveState, setSaveState]         = useState<SaveState>('idle');
   const [deleteConfirm, setDeleteConfirm] = useState(false);
-  const [deleting, setDeleting]         = useState(false);
+  const [deleting, setDeleting]           = useState(false);
+  const [viewerOpen, setViewerOpen]       = useState(false);
+  const [previewLoaded, setPreviewLoaded] = useState(false);
+
+  // Touch-swipe tracking
+  const touchStartX = useRef<number | null>(null);
+  const touchStartY = useRef<number | null>(null);
 
   // Reset local state whenever a new doc is opened
   useEffect(() => {
     if (!doc) return;
-    setDrafts(initDrafts(doc.raw_analysis));
+    setDrafts(initDrafts(doc.raw_analysis, doc.insights));
     setDraftType(doc.document_type);
     setDraftNotes(doc.user_notes ?? '');
     setSaveState('idle');
     setDeleteConfirm(false);
+    setViewerOpen(false);
+    setPreviewLoaded(false);
   }, [doc?.id]);
+
+  // Keyboard left / right for navigation (skip when focus is in a text input)
+  useEffect(() => {
+    if (!open) return;
+    const handler = (e: KeyboardEvent) => {
+      const tag = (e.target as HTMLElement).tagName;
+      if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
+      if (e.key === 'ArrowLeft')  { onPrev?.(); }
+      if (e.key === 'ArrowRight') { onNext?.(); }
+    };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, [open, onPrev, onNext]);
 
   if (!doc) return null;
 
   const { emoji } = typeConfig(doc.document_type, lang);
   const displayName = doc.original_filename ?? doc.file_name;
   const summary = lang === 'he' ? doc.summary_he : doc.summary_en;
-  const fields = EDITABLE_FIELDS[draftType] ?? [];
+  const insightFields = getInsightFields(doc.insights ?? doc.raw_analysis);
+  const fields = insightFields.length > 0 ? insightFields : (EDITABLE_FIELDS[draftType] ?? []);
+
+  const isPdf = doc.file_name.toLowerCase().endsWith('.pdf');
+  const fileUrl = `/api/file?id=${doc.id}&t=${encodeURIComponent(token)}`;
 
   // Derive a display amount from current drafts for the share message
   const amountKey = fields.find(k => ['total_amount', 'total_balance', 'premium_amount'].includes(k));
@@ -61,7 +94,6 @@ export default function DocumentDrawer({ doc, token, open, onClose, onUpdate, on
     if (saveState === 'saving') return;
     setSaveState('saving');
     try {
-      // Merge drafts back into raw_analysis
       const newRaw = { ...(doc.raw_analysis ?? {}) };
       fields.forEach(k => { if (drafts[k] !== '') newRaw[k] = drafts[k]; });
       if (draftType !== doc.document_type) newRaw['document_type'] = draftType;
@@ -103,24 +135,42 @@ export default function DocumentDrawer({ doc, token, open, onClose, onUpdate, on
     window.open(`https://wa.me/?text=${encodeURIComponent(parts.join('\n'))}`, '_blank');
   };
 
-  // ── Field input renderer ────────────────────────────────────────────────────
+  // ── Swipe handling ──────────────────────────────────────────────────────────
 
-  const renderField = (key: string) => {
+  const handleTouchStart = (e: React.TouchEvent) => {
+    touchStartX.current = e.touches[0].clientX;
+    touchStartY.current = e.touches[0].clientY;
+  };
+
+  const handleTouchEnd = (e: React.TouchEvent) => {
+    if (touchStartX.current === null) return;
+    const dx = e.changedTouches[0].clientX - touchStartX.current;
+    const dy = e.changedTouches[0].clientY - (touchStartY.current ?? 0);
+    touchStartX.current = null;
+    touchStartY.current = null;
+    // Only act on clearly horizontal swipes (more horizontal than vertical, ≥50px)
+    if (Math.abs(dx) < 50 || Math.abs(dx) < Math.abs(dy) * 1.5) return;
+    if (dx > 0) onPrev?.();
+    else        onNext?.();
+  };
+
+  // ── Compact field renderer (used in the preview side-column) ─────────────────
+
+  const renderFieldCompact = (key: string) => {
     const meta = FIELD_META[key];
-    if (!meta) return null;
-    const label = lang === 'he' ? meta.he : meta.en;
-    const isDate = meta.type === 'date';
-    const isNumber = meta.type === 'number' || meta.type === 'currency';
+    const label = meta ? (lang === 'he' ? meta.he : meta.en) : labelFromKey(key);
+    const isDate = meta?.type === 'date';
+    const isNumber = meta?.type === 'number' || meta?.type === 'currency';
 
     return (
-      <div key={key} className="flex flex-col gap-1.5">
-        <label className="text-xs font-medium text-muted-foreground">{label}</label>
+      <div key={key} className="flex flex-col gap-0.5">
+        <label className="text-[10px] font-medium leading-none text-muted-foreground">{label}</label>
         <input
           type={isDate ? 'date' : isNumber ? 'number' : 'text'}
           dir={isDate || isNumber ? 'ltr' : 'auto'}
           value={drafts[key] ?? ''}
           onChange={e => setDrafts(prev => ({ ...prev, [key]: e.target.value }))}
-          className="w-full rounded-xl bg-secondary px-4 py-3 text-sm text-foreground ring-1 ring-border/60 outline-none focus:ring-2 focus:ring-[#7a8c6e]/40 placeholder:text-muted-foreground/50"
+          className="w-full rounded-lg bg-secondary px-2.5 py-1.5 text-xs text-foreground ring-1 ring-border/60 outline-none focus:ring-2 focus:ring-[#7a8c6e]/40"
         />
       </div>
     );
@@ -136,6 +186,7 @@ export default function DocumentDrawer({ doc, token, open, onClose, onUpdate, on
   };
 
   return (
+    <>
     <Drawer.Root
       open={open}
       onOpenChange={v => { if (!v) { onClose(); setDeleteConfirm(false); } }}
@@ -145,6 +196,8 @@ export default function DocumentDrawer({ doc, token, open, onClose, onUpdate, on
         <Drawer.Content
           className="fixed inset-x-0 bottom-0 z-[60] mx-auto flex max-h-[92vh] max-w-2xl flex-col rounded-t-3xl bg-card outline-none"
           dir={lang === 'he' ? 'rtl' : 'ltr'}
+          onTouchStart={handleTouchStart}
+          onTouchEnd={handleTouchEnd}
         >
           {/* Drag handle */}
           <div className="flex justify-center pt-3 pb-1">
@@ -152,13 +205,36 @@ export default function DocumentDrawer({ doc, token, open, onClose, onUpdate, on
           </div>
 
           {/* Header */}
-          <div className="flex items-center justify-between px-5 pb-3 pt-1">
-            <h2 className="text-base font-bold text-foreground">
+          <div className="flex items-center justify-between px-5 pb-3 pt-1 gap-2">
+            <h2 className="text-base font-bold text-foreground flex-1">
               {lang === 'he' ? 'פרטי מסמך' : 'Document Details'}
             </h2>
+
+            {/* Prev / Next navigation arrows */}
+            {(hasPrev || hasNext) && (
+              <div className="flex items-center gap-1 shrink-0" dir="ltr">
+                <button
+                  onClick={onPrev}
+                  disabled={!hasPrev}
+                  className="flex h-7 w-7 items-center justify-center rounded-full bg-secondary text-muted-foreground transition-colors disabled:opacity-25 hover:text-foreground hover:bg-secondary/80"
+                  aria-label="Previous document"
+                >
+                  <ChevronLeft className="h-4 w-4" />
+                </button>
+                <button
+                  onClick={onNext}
+                  disabled={!hasNext}
+                  className="flex h-7 w-7 items-center justify-center rounded-full bg-secondary text-muted-foreground transition-colors disabled:opacity-25 hover:text-foreground hover:bg-secondary/80"
+                  aria-label="Next document"
+                >
+                  <ChevronRight className="h-4 w-4" />
+                </button>
+              </div>
+            )}
+
             <button
               onClick={onClose}
-              className="flex h-8 w-8 items-center justify-center rounded-full bg-secondary text-muted-foreground hover:text-foreground transition-colors"
+              className="flex h-8 w-8 items-center justify-center rounded-full bg-secondary text-muted-foreground hover:text-foreground transition-colors shrink-0"
               aria-label="Close"
             >
               <X className="h-4 w-4" />
@@ -167,21 +243,84 @@ export default function DocumentDrawer({ doc, token, open, onClose, onUpdate, on
 
           {/* Scrollable body */}
           <div className="flex-1 overflow-y-auto overscroll-contain px-5 pb-4">
-            {/* Doc identity */}
-            <div className="mb-5 flex items-center gap-3 rounded-2xl bg-secondary/60 px-4 py-3">
-              <span className="text-2xl">{emoji}</span>
-              <p
-                className="min-w-0 flex-1 truncate text-sm font-semibold text-foreground"
-                dir="ltr"
-                style={{ textAlign: lang === 'he' ? 'right' : 'left' }}
+
+            {/* ── Top section: preview (left in RTL/Hebrew, right in LTR/English) ── */}
+            <div className={`mb-5 flex gap-3 ${lang !== 'he' ? 'flex-row-reverse' : ''}`}>
+
+              {/* Document preview — border uses 'border' not 'ring' to avoid scroll-container clipping */}
+              <motion.button
+                whileTap={{ scale: 0.97 }}
+                onClick={() => setViewerOpen(true)}
+                className="relative shrink-0 w-[38%] h-56 rounded-2xl overflow-hidden border border-border/40 hover:border-[#7a8c6e]/60 transition-colors bg-secondary flex items-center justify-center"
+                aria-label={lang === 'he' ? 'צפה במסמך' : 'View document'}
               >
-                {displayName}
-              </p>
+                {isPdf ? (
+                  <iframe
+                    src={fileUrl}
+                    title={displayName}
+                    scrolling="no"
+                    className={`w-full h-full border-0 pointer-events-none transition-opacity duration-300 ${previewLoaded ? 'opacity-100' : 'opacity-0'}`}
+                    onLoad={() => setPreviewLoaded(true)}
+                  />
+                ) : (
+                  <img
+                    src={fileUrl}
+                    alt=""
+                    className={`w-full h-full object-cover transition-opacity duration-300 ${previewLoaded ? 'opacity-100' : 'opacity-0'}`}
+                    onLoad={() => setPreviewLoaded(true)}
+                    onError={() => setPreviewLoaded(true)}
+                  />
+                )}
+
+                {/* Animated loading indicator — fades out once content is ready */}
+                <AnimatePresence>
+                  {!previewLoaded && (
+                    <motion.div
+                      key="loader"
+                      initial={{ opacity: 1 }}
+                      exit={{ opacity: 0 }}
+                      transition={{ duration: 0.3 }}
+                      className="absolute inset-0 flex flex-col items-center justify-center gap-3 bg-secondary"
+                    >
+                      {/* Shimmer skeleton lines — each row shimmers independently */}
+                      <div className="w-2/3 space-y-2">
+                        {(['w-full', 'w-5/6', 'w-full', 'w-4/6', 'w-full', 'w-3/4'] as const).map((w, i) => (
+                          <div key={i} className={`relative h-1.5 rounded bg-border/50 overflow-hidden ${w}`}>
+                            <motion.div
+                              className="absolute inset-0 bg-gradient-to-r from-transparent via-white/80 to-transparent"
+                              animate={{ x: ['-100%', '200%'] }}
+                              transition={{ duration: 1.4, repeat: Infinity, ease: 'linear', repeatDelay: 0.3 }}
+                            />
+                          </div>
+                        ))}
+                      </div>
+                    </motion.div>
+                  )}
+                </AnimatePresence>
+              </motion.button>
+
+              {/* Right column: filename + compact editable fields */}
+              <div className="flex-1 min-w-0 flex flex-col gap-2" dir={lang === 'he' ? 'rtl' : 'ltr'}>
+
+                {/* Filename chip */}
+                <div className="flex items-center gap-1.5 rounded-xl bg-secondary/60 px-3 py-2">
+                  <span className="shrink-0 text-lg leading-none">{emoji}</span>
+                  <p
+                    className="min-w-0 flex-1 text-xs font-semibold text-foreground break-all leading-snug"
+                    dir="ltr"
+                    style={{ textAlign: lang === 'he' ? 'right' : 'left' }}
+                  >
+                    {displayName}
+                  </p>
+                </div>
+
+                {/* Compact metadata fields */}
+                {fields.map(renderFieldCompact)}
+              </div>
             </div>
 
+            {/* ── Below: category, AI summary, notes ── */}
             <div className="flex flex-col gap-4">
-              {/* Editable fields for this doc type */}
-              {fields.map(renderField)}
 
               {/* Category pills */}
               <div className="flex flex-col gap-1.5">
@@ -302,5 +441,17 @@ export default function DocumentDrawer({ doc, token, open, onClose, onUpdate, on
         </Drawer.Content>
       </Drawer.Portal>
     </Drawer.Root>
+
+    {/* Full-screen viewer — rendered at body level to clear the drawer's stacking context */}
+    {viewerOpen && typeof document !== 'undefined' && createPortal(
+      <DocumentModal
+        doc={doc}
+        token={token}
+        onClose={() => setViewerOpen(false)}
+        onUpdate={onUpdate}
+      />,
+      document.body,
+    )}
+    </>
   );
 }

@@ -1,4 +1,4 @@
-import { GoogleGenerativeAI } from '@google/generative-ai';
+import { GoogleGenerativeAI, SchemaType } from '@google/generative-ai';
 import type { DocumentType } from '@/lib/types';
 
 export const IMAGE_EXTENSIONS = new Set(['png', 'jpg', 'jpeg', 'tiff', 'bmp', 'heic', 'heif']);
@@ -99,6 +99,90 @@ export async function classifyDocument(summaryEn: string, text: string): Promise
     `Summary: ${summaryEn}\nDocument: ${text.slice(0, 4000)}`
   );
 }
+
+// ── Two-Pass DB-driven extraction ─────────────────────────────────────────────
+
+export interface DocumentTypeRow {
+  name: string;
+  matching_description: string | null;
+  schema_definition: { fields?: string[] } & Record<string, unknown>;
+}
+
+/**
+ * Phase 1 — classify the document against the active types fetched from DB.
+ * Sends only the first ~3 000 chars (≈ 2 pages) to keep latency low.
+ * Returns the matched `name` from the DB row, or "Other".
+ */
+export async function classifyAgainstTypes(
+  text: string,
+  types: DocumentTypeRow[],
+): Promise<string> {
+  const list = types
+    .map(t => `• "${t.name}"${t.matching_description ? ` — ${t.matching_description}` : ''}`)
+    .join('\n');
+
+  const result = await callGemini(
+    `You are a document classifier. Choose the single best type for the document below.\n\n` +
+    `Available types:\n${list}\n• "Other" — use only if none of the above fit\n\n` +
+    `Reply with ONLY the exact type name as listed above, nothing else.\n\n` +
+    `Document (first portion):\n${text.slice(0, 3000)}`
+  );
+
+  const cleaned = result.trim().replace(/^["'•\-\s]+|["']+$/g, '');
+  const match = types.find(t => t.name.toLowerCase() === cleaned.toLowerCase());
+  return match ? match.name : 'Other';
+}
+
+/**
+ * Phase 2 — extract structured fields defined by the matched type's schema_definition.
+ * Uses Gemini's native JSON response schema when possible; falls back to prompt-based.
+ */
+export async function extractStructured(
+  text: string,
+  fields: string[],
+): Promise<Record<string, unknown>> {
+  if (fields.length === 0) return {};
+
+  // Build a dynamic response schema: all fields are nullable strings
+  const schemaProperties = Object.fromEntries(
+    fields.map(f => [f, { type: SchemaType.STRING, nullable: true }])
+  );
+
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const result = await (model as any).generateContent({
+      contents: [{
+        role: 'user',
+        parts: [{ text:
+          `Extract the following fields from the document. ` +
+          `Use null for any field not found. ` +
+          `Dates must be YYYY-MM-DD. Amounts must be plain numbers (no currency symbols).\n\n` +
+          `Fields to extract: ${fields.join(', ')}\n\n` +
+          `Document:\n${text.slice(0, 6000)}`,
+        }],
+      }],
+      generationConfig: {
+        responseMimeType: 'application/json',
+        responseSchema: {
+          type: SchemaType.OBJECT,
+          properties: schemaProperties,
+        },
+      },
+    });
+    return JSON.parse(result.response.text()) as Record<string, unknown>;
+  } catch (err) {
+    console.warn('[extractStructured] Structured output failed, using prompt fallback:', String(err));
+    const raw = await callGemini(
+      `Extract these fields as a JSON object: ${fields.join(', ')}\n` +
+      `Use null for missing fields. Dates in YYYY-MM-DD. Amounts as numbers.\n\n` +
+      `Document:\n${text.slice(0, 6000)}`,
+      true
+    );
+    try { return JSON.parse(raw) as Record<string, unknown>; } catch { return {}; }
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 
 export async function extractMetadata(documentType: DocumentType, text: string): Promise<Record<string, unknown>> {
   let prompt: string;

@@ -6,6 +6,7 @@ import { translations } from '@/lib/vault/translations';
 import { updateDocument } from '@/lib/services/documents';
 import {
   DOC_TYPES, DOC_TYPE_LABELS, EDITABLE_FIELDS, FIELD_META, initDrafts,
+  getInsightFields, labelFromKey,
 } from '@/lib/vault/fieldMeta';
 
 // ─── Skeleton ─────────────────────────────────────────────────────────────────
@@ -40,7 +41,7 @@ export default function DocumentModal({ doc, token, onClose, onUpdate }: Props) 
 
   // ── Edit state ──────────────────────────────────────────────────────────────
   const [typeDraft, setTypeDraft] = useState<DocumentType>(doc.document_type);
-  const [drafts, setDrafts] = useState<Record<string, string>>(() => initDrafts(doc.raw_analysis));
+  const [drafts, setDrafts] = useState<Record<string, string>>(() => initDrafts(doc.raw_analysis, doc.insights));
   const [notesDraft, setNotesDraft] = useState(doc.user_notes ?? '');
   const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
 
@@ -85,9 +86,8 @@ export default function DocumentModal({ doc, token, onClose, onUpdate }: Props) 
   // ── Field renderer ──────────────────────────────────────────────────────────
   function renderField(key: string) {
     const meta = FIELD_META[key];
-    if (!meta) return null;
 
-    const label = meta[lang];
+    const label = meta ? meta[lang] : labelFromKey(key);
     const val = drafts[key] ?? '';
     const ra = doc.raw_analysis ?? {};
     const original = ra[key] != null ? String(ra[key]) : '';
@@ -104,7 +104,7 @@ export default function DocumentModal({ doc, token, onClose, onUpdate }: Props) 
     const inputBase = `w-full bg-zinc-800 text-white text-sm px-3 py-2 rounded-lg border border-zinc-700 focus:outline-none focus:border-zen-sage/60 transition-colors placeholder-white/20 ${ringCls}`;
 
     const input =
-      meta.type === 'currency' ? (
+      meta?.type === 'currency' ? (
         <select
           value={val}
           onChange={e => setDrafts(prev => ({ ...prev, [key]: e.target.value }))}
@@ -117,11 +117,11 @@ export default function DocumentModal({ doc, token, onClose, onUpdate }: Props) 
         </select>
       ) : (
         <input
-          type={meta.type === 'date' ? 'date' : meta.type === 'number' ? 'number' : 'text'}
+          type={meta?.type === 'date' ? 'date' : meta?.type === 'number' ? 'number' : 'text'}
           value={val}
           onChange={e => setDrafts(prev => ({ ...prev, [key]: e.target.value }))}
           placeholder={isAiExtracted ? original : '—'}
-          step={meta.type === 'number' ? 'any' : undefined}
+          step={meta?.type === 'number' ? 'any' : undefined}
           className={inputBase}
         />
       );
@@ -143,7 +143,8 @@ export default function DocumentModal({ doc, token, onClose, onUpdate }: Props) 
   }
 
   // ── Edit panel ──────────────────────────────────────────────────────────────
-  const currentFields = EDITABLE_FIELDS[typeDraft] ?? [];
+  const insightFields = getInsightFields(doc.insights ?? doc.raw_analysis);
+  const currentFields = insightFields.length > 0 ? insightFields : (EDITABLE_FIELDS[typeDraft] ?? []);
 
   const editPanel = (
     <div className="flex flex-col h-full" dir={lang === 'he' ? 'rtl' : 'ltr'}>

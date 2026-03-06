@@ -13,12 +13,14 @@ export const config = {
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   if (req.method !== 'POST') {
-    return res.status(405).json({ error: 'Method not allowed' });
+    res.status(405).json({ error: 'Method not allowed' });
+    return;
   }
 
   const userId = await getUserIdFromRequest(req);
   if (!userId) {
-    return res.status(401).json({ error: 'Unauthorized — please sign in' });
+    res.status(401).json({ error: 'Unauthorized — please sign in' });
+    return;
   }
 
   const { documentId, thumbnailBase64 } = req.body as {
@@ -27,7 +29,8 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   };
 
   if (!documentId || !thumbnailBase64) {
-    return res.status(400).json({ error: 'Missing documentId or thumbnailBase64' });
+    res.status(400).json({ error: 'Missing documentId or thumbnailBase64' });
+    return;
   }
 
   // Verify the document belongs to this user
@@ -38,7 +41,8 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     .single();
 
   if (docError || !doc || doc.owner_id !== userId) {
-    return res.status(403).json({ error: 'Document not found or access denied' });
+    res.status(403).json({ error: 'Document not found or access denied' });
+    return;
   }
 
   // Ensure the thumbnails bucket exists (idempotent)
@@ -46,7 +50,8 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     await ensureBucket('thumbnails', true);
   } catch (bucketErr) {
     console.error('Bucket creation error:', bucketErr);
-    return res.status(500).json({ error: 'Storage setup failed', details: String(bucketErr) });
+    res.status(500).json({ error: 'Storage setup failed', details: String(bucketErr) });
+    return;
   }
 
   // Convert base64 to buffer (strip data URL prefix if present)
@@ -59,7 +64,8 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     await uploadFile('thumbnails', storagePath, buffer, 'image/jpeg');
   } catch (uploadErr) {
     console.error('Storage upload error:', uploadErr);
-    return res.status(500).json({ error: 'Failed to upload thumbnail', details: String(uploadErr) });
+    res.status(500).json({ error: 'Failed to upload thumbnail', details: String(uploadErr) });
+    return;
   }
 
   // Get the public URL
@@ -73,8 +79,10 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
   if (updateError) {
     console.error('DB update error:', updateError);
-    return res.status(500).json({ error: 'Failed to save thumbnail URL', details: updateError.message });
+    res.status(500).json({ error: 'Failed to save thumbnail URL', details: updateError.message });
+    return;
   }
 
-  return res.status(200).json({ success: true, thumbnailUrl: publicUrl });
+  res.status(200).json({ success: true, thumbnailUrl: publicUrl });
+  return;
 }

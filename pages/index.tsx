@@ -544,6 +544,7 @@ export default function Dashboard() {
           summary_he: d.summary_he ?? null,
           summary_en: d.summary_en ?? null,
           raw_analysis: d.raw_metadata ?? null,
+          insights: d.raw_metadata ?? null,
           thumbnail_url: null,
           created_at: new Date().toISOString(),
           user_notes: null,
@@ -713,6 +714,18 @@ export default function Dashboard() {
           onClose={() => setSelectedDoc(null)}
           onUpdate={handleUpdate}
           onDelete={handleDelete}
+          hasPrev={selectedDoc ? displayedDocs.findIndex(d => d.id === selectedDoc.id) > 0 : false}
+          hasNext={selectedDoc ? displayedDocs.findIndex(d => d.id === selectedDoc.id) < displayedDocs.length - 1 : false}
+          onPrev={() => {
+            if (!selectedDoc) return;
+            const idx = displayedDocs.findIndex(d => d.id === selectedDoc.id);
+            if (idx > 0) setSelectedDoc(displayedDocs[idx - 1]);
+          }}
+          onNext={() => {
+            if (!selectedDoc) return;
+            const idx = displayedDocs.findIndex(d => d.id === selectedDoc.id);
+            if (idx < displayedDocs.length - 1) setSelectedDoc(displayedDocs[idx + 1]);
+          }}
         />
 
         {/* ── Header ── */}

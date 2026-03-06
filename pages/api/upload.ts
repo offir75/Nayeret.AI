@@ -16,12 +16,14 @@ export default async function handler(
   res: NextApiResponse
 ) {
   if (req.method !== 'POST') {
-    return res.status(405).json({ error: 'Method not allowed' });
+    res.status(405).json({ error: 'Method not allowed' });
+    return;
   }
 
   const userId = await getUserIdFromRequest(req);
   if (!userId) {
-    return res.status(401).json({ error: 'Unauthorized — please sign in' });
+    res.status(401).json({ error: 'Unauthorized — please sign in' });
+    return;
   }
 
   try {
@@ -33,7 +35,8 @@ export default async function handler(
     };
 
     if (!file || !filename) {
-      return res.status(400).json({ error: 'Missing file or filename' });
+      res.status(400).json({ error: 'Missing file or filename' });
+      return;
     }
 
     // ── Tier 1: Byte-level duplicate check ──────────────────────────────────────────
@@ -48,7 +51,7 @@ export default async function handler(
 
       if (existing) {
         console.log('[dedup] Duplicate detected for hash:', fileHash, '| owner:', userId, '| existing doc id:', existing.id, '| file:', existing.file_name);
-        return res.status(200).json({
+        res.status(200).json({
           isDuplicate: true,
           existingDoc: {
             id: existing.id,
@@ -57,6 +60,7 @@ export default async function handler(
             thumbnail_url: existing.thumbnail_url ?? null,
           },
         });
+        return;
       }
     }
 
@@ -87,12 +91,14 @@ export default async function handler(
     const storagePath = `${userId}/${filename}`;
     await uploadFile('documents', storagePath, buffer, mimeType);
 
-    return res.status(200).json({ isDuplicate: false, success: true });
+    res.status(200).json({ isDuplicate: false, success: true });
+    return;
   } catch (error) {
     console.error('Upload error:', error);
-    return res.status(500).json({
+    res.status(500).json({
       error: 'Failed to upload file',
       details: error instanceof Error ? error.message : 'Unknown error',
     });
+    return;
   }
 }
