@@ -6,7 +6,7 @@ import { translations } from '@/lib/vault/translations';
 
 export default function VaultSummaryBar({ docs }: { docs: VaultDoc[] }) {
   const { currency, privacyMode, lang } = useSettings();
-  const symbol = currency === 'ILS' ? '₪' : '$';
+  const symbol = currency === 'USD' ? '$' : '₪';
 
   let totalAssets = 0;
   let assetCount  = 0;
@@ -18,7 +18,6 @@ export default function VaultSummaryBar({ docs }: { docs: VaultDoc[] }) {
     if (!ra) continue;
 
     if (doc.document_type === 'financial_report') {
-      // Prefer total_balance; fall back to total_assets if present
       const n = Number(ra.total_balance ?? ra.total_assets);
       if (!isNaN(n) && n > 0) {
         totalAssets += convertAmount(n, String(ra.currency ?? 'ILS'), currency);
@@ -27,7 +26,6 @@ export default function VaultSummaryBar({ docs }: { docs: VaultDoc[] }) {
     }
 
     if (doc.document_type === 'bill') {
-      // Skip automatically-paid bills — they're not "to pay"
       if (ra.is_automatic_payment === true || ra.is_automatic_payment === 'true') continue;
       const n = Number(ra.total_amount);
       if (!isNaN(n) && n > 0) {
@@ -61,8 +59,8 @@ export default function VaultSummaryBar({ docs }: { docs: VaultDoc[] }) {
               </p>
               <p className="text-xs text-muted-foreground mt-1">{assetDesc}</p>
             </div>
-            <div className="flex items-center justify-center w-10 h-10 rounded-lg bg-zen-sage/10 flex-shrink-0">
-              <TrendingUp className="w-5 h-5 text-zen-sage" />
+            <div className="flex items-center justify-center w-10 h-10 rounded-lg bg-primary/10 flex-shrink-0">
+              <TrendingUp className="w-5 h-5 text-primary" />
             </div>
           </div>
         </div>

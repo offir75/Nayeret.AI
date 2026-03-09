@@ -1,5 +1,5 @@
 import Head from 'next/head';
-import { Settings, Shield, Camera, Upload, Loader2, CheckCircle2, Sparkles, X, Search } from 'lucide-react';
+import { Settings, Shield, Camera, Upload, Loader2, CheckCircle2, ScanLine, X, Eye, EyeOff } from 'lucide-react';
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useRouter } from 'next/router';
 import { useDropzone } from 'react-dropzone';
@@ -7,7 +7,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { supabase } from '@/supabase/browser';
 import type { User, Session } from '@supabase/supabase-js';
 
-import { translations } from '@/lib/vault/translations';
+import { translations, type TranslationKey } from '@/lib/vault/translations';
 import { SettingsContext, useSettings } from '@/lib/context/settings';
 import type { SettingsCtx } from '@/lib/context/settings';
 import type { VaultDoc, UploadJob, AppSettings, Lang, Currency, DuplicateDocInfo, SemanticMatchInfo } from '@/lib/types';
@@ -22,6 +22,33 @@ import DocumentDrawer from '@/components/vault/DocumentDrawer';
 import DocumentModal from '@/components/vault/DocumentModal';
 import VaultCard from '@/components/vault/VaultCard';
 import IngestionHub from '@/components/vault/IngestionHub';
+import { enrichDocs } from '@/lib/vault/docAdapter';
+import type { RichDoc } from '@/lib/vault/docAdapter';
+import { SettingsDrawer } from '@/components/dashboard/SettingsDrawer';
+import { MobileBottomNav } from '@/components/dashboard/MobileBottomNav';
+import { MetricCards } from '@/components/dashboard/MetricCards';
+import type { MetricFilter } from '@/components/dashboard/MetricCards';
+import { CriticalTimeline } from '@/components/dashboard/CriticalTimeline';
+import { NotificationBell } from '@/components/dashboard/NotificationBell';
+import { EngagementBar } from '@/components/dashboard/EngagementBar';
+import { MilestoneCard } from '@/components/dashboard/MilestoneCard';
+import dynamic from 'next/dynamic';
+import { DashboardSkeleton } from '@/components/dashboard/DashboardSkeleton';
+import { OnboardingWizard } from '@/components/onboarding/OnboardingWizard';
+import { EmptyState } from '@/components/dashboard/EmptyState';
+import { GlobalSearch } from '@/components/dashboard/GlobalSearch';
+import { DocumentTable } from '@/components/dashboard/DocumentTable';
+import { FilterEmptyState } from '@/components/dashboard/FilterEmptyState';
+
+// Chart components use recharts (ESM) — must be dynamically imported to avoid SSR issues
+const SpendingInsights = dynamic(
+  () => import('@/components/dashboard/SpendingInsights').then(m => ({ default: m.SpendingInsights })),
+  { ssr: false },
+);
+const IncomeExpenseChart = dynamic(
+  () => import('@/components/dashboard/IncomeExpenseChart').then(m => ({ default: m.IncomeExpenseChart })),
+  { ssr: false },
+);
 
 // ── Spinner ──────────────────────────────────────────────────────────────────
 
@@ -110,9 +137,13 @@ function SettingsPanel({ isOpen, onClose, user, onLogout }: {
 
           <section>
             <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-3">{translations.dashboardLang[lang]}</h3>
-            <div className="flex rounded-lg border border-border overflow-hidden">
-              <button onClick={() => setLang('he')} className={`flex-1 py-2 text-sm font-medium transition-colors ${lang === 'he' ? 'bg-zen-sage text-white' : 'bg-card text-muted-foreground hover:bg-secondary'}`}>עברית</button>
-              <button onClick={() => setLang('en')} className={`flex-1 py-2 text-sm font-medium border-s border-border transition-colors ${lang === 'en' ? 'bg-zen-sage text-white' : 'bg-card text-muted-foreground hover:bg-secondary'}`}>English</button>
+            <div className="flex gap-2">
+              {(['he', 'en'] as const).map((l) => (
+                <button key={l} onClick={() => setLang(l)}
+                  className={`flex-1 py-2 rounded-xl text-sm font-medium transition-colors border ${lang === l ? 'bg-primary/10 border-primary/40 text-primary' : 'bg-muted/30 border-border/50 text-muted-foreground hover:bg-muted/50'}`}>
+                  {l === 'he' ? 'עברית' : 'English'}
+                </button>
+              ))}
             </div>
             <p className="mt-2 text-xs text-muted-foreground">{translations.dashboardLangDesc[lang]}</p>
           </section>
@@ -134,9 +165,13 @@ function SettingsPanel({ isOpen, onClose, user, onLogout }: {
 
           <section>
             <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-3">{translations.currency[lang]}</h3>
-            <div className="flex rounded-lg border border-border overflow-hidden">
-              <button onClick={() => setCurrency('ILS')} className={`flex-1 py-2 text-sm font-medium transition-colors ${currency === 'ILS' ? 'bg-zen-sage text-white' : 'bg-card text-muted-foreground hover:bg-secondary'}`}>{translations.ils[lang]}</button>
-              <button onClick={() => setCurrency('USD')} className={`flex-1 py-2 text-sm font-medium border-s border-border transition-colors ${currency === 'USD' ? 'bg-zen-sage text-white' : 'bg-card text-muted-foreground hover:bg-secondary'}`}>{translations.usd[lang]}</button>
+            <div className="flex gap-2">
+              {(['ILS', 'USD'] as const).map((c) => (
+                <button key={c} onClick={() => setCurrency(c)}
+                  className={`flex-1 py-2 rounded-xl text-sm font-medium transition-colors border ${currency === c ? 'bg-primary/10 border-primary/40 text-primary' : 'bg-muted/30 border-border/50 text-muted-foreground hover:bg-muted/50'}`}>
+                  {c === 'ILS' ? translations.ils[lang] : translations.usd[lang]}
+                </button>
+              ))}
             </div>
             <p className="mt-2 text-xs text-muted-foreground">{translations.currencyDesc[lang]}</p>
           </section>
@@ -422,8 +457,8 @@ export default function Dashboard() {
   const [search, setSearch] = useState('');
   const [selectedDoc, setSelectedDoc] = useState<VaultDoc | null>(null);
   const [fullViewDoc, setFullViewDoc] = useState<VaultDoc | null>(null);
-  const [activeTab, setActiveTab] = useState<'recent' | 'all'>('recent');
-  const [activeCategory, setActiveCategory] = useState<string | null>(null);
+  const [metricFilter, setMetricFilter] = useState<MetricFilter>(null);
+  const [onboarded, setOnboarded] = useState<boolean | null>(null);
 
   // ── Deduplication state ───────────────────────────────────────────────────────
   const [tier1Conflict, setTier1Conflict] = useState<{
@@ -479,6 +514,23 @@ export default function Dashboard() {
   const setPrivacyMode = (v: boolean) => { setPrivacyModeState(v); saveSettings({ privacyMode: v }); };
   const setAlertDays = (v: number) => { setAlertDaysState(v); saveSettings({ alertDays: v }); };
   const setCurrency = (v: Currency) => { setCurrencyState(v); saveSettings({ currency: v }); };
+
+  // ── Onboarding state ─────────────────────────────────────────────────────────
+  useEffect(() => {
+    try { setOnboarded(localStorage.getItem('nayeret_onboarded') === 'true'); } catch { setOnboarded(true); }
+  }, []);
+
+  // ── Handle redirect from /capture ────────────────────────────────────────────
+  useEffect(() => {
+    if (router.query.docAdded !== '1') return;
+    void router.replace('/');
+    if (!session) return;
+    const token = session.access_token;
+    setTimeout(() => {
+      fetchDocuments(token).then(setDocs).catch(() => {});
+    }, 3000);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [router.query.docAdded]);
 
   // ── Load library ──────────────────────────────────────────────────────────────
 
@@ -548,6 +600,7 @@ export default function Dashboard() {
           id: supabaseId,
           file_name: normalizedName,
           document_type: d.document_type ?? 'other',
+          ui_category: null,
           summary_he: d.summary_he ?? null,
           summary_en: d.summary_en ?? null,
           raw_analysis: d.raw_metadata ?? null,
@@ -631,6 +684,8 @@ export default function Dashboard() {
     setFullViewDoc(prev => prev?.id === updated.id ? updated : prev);
   };
 
+  const richDocs = useMemo(() => enrichDocs(docs), [docs]);
+
   const q = search.toLowerCase();
   const filtered = useMemo(() => docs.filter(d =>
     d.file_name.toLowerCase().includes(q) ||
@@ -643,15 +698,32 @@ export default function Dashboard() {
     (d.original_filename ?? '').toLowerCase().includes(q)
   ), [docs, q]);
 
-  const RECENT_LIMIT = 8;
   const isSearching = search.length > 0;
 
-  const displayedDocs = useMemo(() => {
-    const base = isSearching ? filtered : docs;
-    const sorted = [...base].sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
-    const byTab = activeTab === 'recent' && !isSearching ? sorted.slice(0, RECENT_LIMIT) : sorted;
-    return activeCategory ? byTab.filter(d => d.ui_category === activeCategory) : byTab;
-  }, [docs, filtered, activeTab, isSearching, activeCategory]);
+  const displayedRichDocs = useMemo(() => {
+    let result = richDocs;
+    if (search.trim()) {
+      const q = search.toLowerCase();
+      result = result.filter(r =>
+        r.file_name.toLowerCase().includes(q) ||
+        r.document_type.toLowerCase().includes(q) ||
+        (r.provider ?? '').toLowerCase().includes(q) ||
+        (r.original_filename ?? '').toLowerCase().includes(q)
+      );
+    }
+    if (!metricFilter) return result;
+    return result.filter(r => {
+      switch (metricFilter) {
+        case 'upcoming':  return !!r.due_date;
+        case 'tax':       return r.tax_tagged;
+        case 'income':    return r.transaction_type === 'income';
+        case 'expense':   return r.transaction_type === 'expense';
+        case 'assets':    return r.ui_category === 'Money' || r.ui_category === 'Trips & Tickets';
+        case 'pending':   return !r.reviewed;
+        default:          return true;
+      }
+    });
+  }, [richDocs, search, metricFilter]);
 
   // ── Auth loading gate ──────────────────────────────────────────────────────────
 
@@ -668,12 +740,23 @@ export default function Dashboard() {
 
   if (!user) return null;
 
-  const ctx: SettingsCtx = { lang, setLang, privacyMode, setPrivacyMode, alertDays, setAlertDays, currency, setCurrency };
+  const ctx: SettingsCtx = {
+    lang, setLang, privacyMode, setPrivacyMode, alertDays, setAlertDays, currency, setCurrency,
+    t: (key: string) => translations[key as TranslationKey]?.[lang] ?? key,
+    isRtl: lang === 'he',
+  };
   const initials = (user.user_metadata?.full_name ?? user.email ?? '?')[0].toUpperCase();
 
   return (
     <SettingsContext.Provider value={ctx}>
       <Head><title>Nayeret.AI</title></Head>
+
+      {onboarded === false && (
+        <OnboardingWizard onComplete={() => {
+          try { localStorage.setItem('nayeret_onboarded', 'true'); } catch {}
+          setOnboarded(true);
+        }} />
+      )}
 
       <div
         {...getRootProps()}
@@ -692,7 +775,7 @@ export default function Dashboard() {
           </div>
         )}
 
-        <SettingsPanel isOpen={settingsOpen} onClose={() => setSettingsOpen(false)} user={user} onLogout={handleLogout} />
+        <SettingsDrawer open={settingsOpen} onClose={() => setSettingsOpen(false)} user={user} onLogout={handleLogout} />
 
         {tier1Conflict && (
           <DuplicateDialog
@@ -724,17 +807,17 @@ export default function Dashboard() {
           onUpdate={handleUpdate}
           onDelete={handleDelete}
           onViewFull={() => selectedDoc && setFullViewDoc(selectedDoc)}
-          hasPrev={selectedDoc ? displayedDocs.findIndex(d => d.id === selectedDoc.id) > 0 : false}
-          hasNext={selectedDoc ? displayedDocs.findIndex(d => d.id === selectedDoc.id) < displayedDocs.length - 1 : false}
+          hasPrev={selectedDoc ? displayedRichDocs.findIndex(d => d.id === selectedDoc.id) > 0 : false}
+          hasNext={selectedDoc ? displayedRichDocs.findIndex(d => d.id === selectedDoc.id) < displayedRichDocs.length - 1 : false}
           onPrev={() => {
             if (!selectedDoc) return;
-            const idx = displayedDocs.findIndex(d => d.id === selectedDoc.id);
-            if (idx > 0) setSelectedDoc(displayedDocs[idx - 1]);
+            const idx = displayedRichDocs.findIndex(d => d.id === selectedDoc.id);
+            if (idx > 0) setSelectedDoc(displayedRichDocs[idx - 1]);
           }}
           onNext={() => {
             if (!selectedDoc) return;
-            const idx = displayedDocs.findIndex(d => d.id === selectedDoc.id);
-            if (idx < displayedDocs.length - 1) setSelectedDoc(displayedDocs[idx + 1]);
+            const idx = displayedRichDocs.findIndex(d => d.id === selectedDoc.id);
+            if (idx < displayedRichDocs.length - 1) setSelectedDoc(displayedRichDocs[idx + 1]);
           }}
         />
 
@@ -753,201 +836,174 @@ export default function Dashboard() {
           initial={{ opacity: 0, y: -10 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.5 }}
-          className="flex items-center justify-between px-4 py-4 md:px-8"
+          className="sticky top-0 z-40 border-b border-border/50 bg-card/80 backdrop-blur-xl"
+          style={{ paddingTop: 'env(safe-area-inset-top)' }}
         >
-          <div className="flex items-center gap-3">
-            <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-zen-sage">
-              <Shield className="h-5 w-5 text-white" />
+          <div className="flex items-center gap-3 px-4 py-3 md:px-8">
+            <div className="flex items-center gap-3 min-w-0 flex-1">
+              <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-zen-sage">
+                <Shield className="h-5 w-5 text-white" />
+              </div>
+              <h1 className="hidden sm:block text-base font-bold tracking-tight text-foreground shrink-0">Nayeret.AI</h1>
+              {docs.length > 0 && (
+                <div className="hidden sm:block flex-1 max-w-xs">
+                  <GlobalSearch value={search} onChange={setSearch} />
+                </div>
+              )}
             </div>
-            <div>
-              <h1 className="text-lg font-bold tracking-tight text-foreground">Nayeret.AI</h1>
-              <p className="text-xs text-muted-foreground">{lang === 'he' ? 'הכספת האישית שלך' : 'Your personal vault'}</p>
-            </div>
-          </div>
 
-          <div className="flex items-center gap-2">
-            <div className="w-9 h-9 rounded-full bg-zen-sage/20 flex items-center justify-center text-xs font-medium text-zen-stone overflow-hidden flex-shrink-0">
-              {user.user_metadata?.avatar_url && !headerAvatarError ? (
-                <img
-                  src={user.user_metadata.avatar_url as string}
-                  alt="avatar"
-                  className="w-full h-full object-cover"
-                  onError={() => setHeaderAvatarError(true)}
-                />
-              ) : initials}
+            <div className="flex items-center gap-2 shrink-0">
+              {docs.length > 0 && (
+                <button
+                  onClick={() => void router.push('/capture')}
+                  className="hidden sm:flex h-9 items-center gap-2 rounded-xl bg-zen-sage px-4 text-sm font-medium text-white transition-colors hover:bg-zen-sage/90"
+                >
+                  <ScanLine className="h-4 w-4" />
+                  {lang === 'he' ? 'סרוק' : 'Scan'}
+                </button>
+              )}
+              <NotificationBell documents={richDocs} onDocClick={(doc: RichDoc) => setSelectedDoc(doc)} />
+              {/* Privacy mode toggle — always visible */}
+              <button
+                onClick={() => setPrivacyMode(!privacyMode)}
+                className={`flex h-9 w-9 items-center justify-center rounded-xl transition-colors ${
+                  privacyMode
+                    ? 'bg-primary/10 text-primary hover:bg-primary/20'
+                    : 'bg-secondary text-muted-foreground hover:bg-border hover:text-foreground'
+                }`}
+                title={privacyMode
+                  ? (lang === 'he' ? 'הצג סכומים' : 'Show amounts')
+                  : (lang === 'he' ? 'הסתר סכומים' : 'Hide amounts')}
+              >
+                {privacyMode ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+              </button>
+              <div className="w-9 h-9 rounded-full bg-zen-sage/20 flex items-center justify-center text-xs font-medium text-zen-stone overflow-hidden flex-shrink-0">
+                {user.user_metadata?.avatar_url && !headerAvatarError ? (
+                  <img
+                    src={user.user_metadata.avatar_url as string}
+                    alt="avatar"
+                    className="w-full h-full object-cover"
+                    onError={() => setHeaderAvatarError(true)}
+                  />
+                ) : initials}
+              </div>
+              <button
+                onClick={() => setSettingsOpen(true)}
+                className="flex h-9 w-9 items-center justify-center rounded-xl bg-secondary text-muted-foreground transition-colors hover:bg-border hover:text-foreground"
+                title={lang === 'he' ? 'הגדרות' : 'Settings'}
+              >
+                <Settings className="h-4 w-4" />
+              </button>
             </div>
-            <button
-              onClick={() => setSettingsOpen(true)}
-              className="flex h-9 w-9 items-center justify-center rounded-xl bg-secondary text-muted-foreground transition-colors hover:bg-border hover:text-foreground"
-              title={lang === 'he' ? 'הגדרות' : 'Settings'}
-            >
-              <Settings className="h-4 w-4" />
-            </button>
           </div>
+          {/* Mobile search row */}
+          {docs.length > 0 && (
+            <div className="sm:hidden px-4 pb-3">
+              <GlobalSearch value={search} onChange={setSearch} />
+            </div>
+          )}
         </motion.header>
 
         {/* ── Main content ── */}
-        <main className="max-w-2xl mx-auto">
+        <main className="max-w-7xl mx-auto px-4 sm:px-6 py-6 space-y-6">
 
           <CaptureZone onFiles={handleFiles} isDragActive={isDragActive} lang={lang} />
 
-          {/* IngestionHub — inline below the drop area, matching its width */}
-          <div className="px-4 md:px-8">
-            <IngestionHub queue={uploadQueue} lang={lang} onCancel={id => {
-              cancelledIds.current.add(id);
-              setUploadQueue(prev => prev.map(j => j.id === id ? { ...j, status: 'cancelled' } : j));
-            }} />
-          </div>
+          <IngestionHub queue={uploadQueue} lang={lang} onCancel={id => {
+            cancelledIds.current.add(id);
+            setUploadQueue(prev => prev.map(j => j.id === id ? { ...j, status: 'cancelled' } : j));
+          }} />
+
+          {/* MetricCards — 4-column stat grid */}
+          {!loadingLibrary && docs.length > 0 && (
+            <MetricCards documents={richDocs} activeFilter={metricFilter} onFilterChange={setMetricFilter} />
+          )}
 
           {!loadingLibrary && docs.length > 0 && (
-            <motion.div
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              transition={{ duration: 0.5, delay: 0.2 }}
-              className="px-4 pt-4 md:px-8"
-            >
-              <VaultSummaryBar docs={docs} />
-            </motion.div>
+            <VaultSummaryBar docs={docs} />
           )}
 
           {loadingLibrary ? (
-            <SkeletonCards />
+            <DashboardSkeleton />
           ) : docs.length === 0 && !isSearching ? (
-            <EmptyVault lang={lang} onSuggestedSearch={q => { setSearch(q); setActiveTab('all'); }} />
+            <EmptyState onFiles={handleFiles} />
           ) : (
-            <motion.section
+            <motion.div
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               transition={{ duration: 0.4, delay: 0.3 }}
-              className="px-4 pb-28 pt-5 md:px-8"
+              className="space-y-6 pb-28"
             >
+              {!isSearching && <EngagementBar documents={richDocs} />}
+
+              {/* Critical Alerts — always visible, full width */}
               {!isSearching && (
-                <div className="mb-4 flex items-center gap-1 rounded-xl bg-secondary/60 p-1">
-                  {([['recent', lang === 'he' ? 'אחרונים' : 'Recent'], ['all', lang === 'he' ? 'הכל' : 'All']] as ['recent' | 'all', string][]).map(([id, label]) => (
-                    <button
-                      key={id}
-                      onClick={() => setActiveTab(id)}
-                      className={`flex-1 rounded-lg px-3 py-2 text-xs font-semibold transition-all ${
-                        activeTab === id
-                          ? 'bg-card text-foreground shadow-sm'
-                          : 'text-muted-foreground hover:text-foreground'
-                      }`}
-                    >
-                      {label}
-                      {id === 'all' && docs.length > 0 && (
-                        <span className="ms-1.5 rounded-full bg-zen-sage/15 px-1.5 py-0.5 text-[10px] font-bold text-zen-sage">
-                          {docs.length}
-                        </span>
-                      )}
-                    </button>
-                  ))}
+                <CriticalTimeline documents={richDocs} onDocClick={(doc: RichDoc) => setSelectedDoc(doc)} />
+              )}
+
+              {/* Milestone tracker */}
+              {!isSearching && <MilestoneCard documents={richDocs} />}
+
+              {/* Analytics — Spending + Cash Flow side by side */}
+              {!isSearching && docs.length > 0 && (
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                  <SpendingInsights documents={richDocs} />
+                  <IncomeExpenseChart documents={richDocs} />
                 </div>
               )}
 
-              {/* Category filter pills — visible when not searching */
-              {!isSearching && (
-                <div className="mb-4 -mx-1 flex items-center gap-2 overflow-x-auto px-1 pb-1 scrollbar-none">
-                  <button
-                    onClick={() => setActiveCategory(null)}
-                    className={`shrink-0 rounded-full px-3 py-1.5 text-xs font-medium transition-colors ${
-                      activeCategory === null
-                        ? 'bg-zen-sage text-white'
-                        : 'bg-secondary text-muted-foreground hover:text-foreground'
-                    }`}
-                  >
-                    {lang === 'he' ? 'הכל' : 'All'}
-                  </button>
-                  {SUPPORTED_CATEGORIES.map(cat => (
-                    <button
-                      key={cat.key}
-                      onClick={() => { setActiveCategory(prev => prev === cat.key ? null : cat.key); setActiveTab('all'); }}
-                      className={`shrink-0 rounded-full px-3 py-1.5 text-xs font-medium transition-colors ${
-                        activeCategory === cat.key
-                          ? 'bg-zen-sage text-white'
-                          : 'bg-secondary text-muted-foreground hover:text-foreground'
-                      }`}
-                    >
-                      {categoryLabel(cat.key, lang)}
-                    </button>
-                  ))}
-                </div>
-              )}
-
-              {isSearching && (
-                <div className="mb-3">
-                  <h2 className="text-sm font-semibold text-muted-foreground">
-                    {lang === 'he' ? `תוצאות חיפוש (${filtered.length})` : `Search results (${filtered.length})`}
+              {/* Documents section */}
+              <div className="space-y-3">
+                <div className="flex items-center justify-between">
+                  <h2 className="text-sm font-semibold text-muted-foreground tracking-wide">
+                    {isSearching
+                      ? (lang === 'he' ? `תוצאות חיפוש (${displayedRichDocs.length})` : `Search results (${displayedRichDocs.length})`)
+                      : (lang === 'he' ? `מסמכים (${displayedRichDocs.length})` : `Documents (${displayedRichDocs.length})`)}
                   </h2>
+                  {metricFilter && (
+                    <button onClick={() => setMetricFilter(null)} className="text-xs text-primary hover:underline font-medium">
+                      {lang === 'he' ? 'נקה סינון' : 'Clear filter'}
+                    </button>
+                  )}
                 </div>
-              )}
-
-              {displayedDocs.length > 0 ? (
-                <div className="space-y-3">
-                  <AnimatePresence mode="popLayout">
-                    {displayedDocs.map((doc, i) => (
-                      <VaultCard
-                        key={doc.id}
-                        doc={doc}
-                        index={i}
-                        token={session?.access_token ?? ''}
-                        onDelete={handleDelete}
-                        onUpdate={handleUpdate}
-                        onOpen={setSelectedDoc}
+                {displayedRichDocs.length === 0 ? (
+                  <FilterEmptyState
+                    metricFilter={metricFilter}
+                    search={search}
+                    lang={lang}
+                    t={(key) => translations[key as TranslationKey]?.[lang] ?? key}
+                    onClearFilter={() => setMetricFilter(null)}
+                    onClearSearch={() => setSearch('')}
+                  />
+                ) : (
+                  <AnimatePresence mode="wait">
+                    <motion.div
+                      key={`${metricFilter ?? 'all'}-${isSearching ? 'search' : 'browse'}`}
+                      initial={{ opacity: 0, y: 6 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      exit={{ opacity: 0, y: -6 }}
+                      transition={{ duration: 0.2 }}
+                    >
+                      <DocumentTable
+                        documents={displayedRichDocs}
+                        onDocClick={(doc) => setSelectedDoc(doc)}
+                        onDeleteDoc={(doc) => handleDelete(doc.id)}
+                        onUpdateDoc={(doc) => handleUpdate(doc)}
                       />
-                    ))}
+                    </motion.div>
                   </AnimatePresence>
-                </div>
-              ) : isSearching ? (
-                <EmptySearch lang={lang} />
-              ) : null}
-            </motion.section>
+                )}
+              </div>
+            </motion.div>
           )}
         </main>
 
-        {/* ── Fixed bottom search bar ── */}
-        <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.5, delay: 0.6 }}
-          className="fixed inset-x-0 bottom-0 z-50 bg-gradient-to-t from-background via-background/95 to-transparent px-4 pt-8"
-          style={{ paddingBottom: 'max(1.25rem, env(safe-area-inset-bottom))' }}
-        >
-          <div className="mx-auto max-w-2xl">
-            <div
-              className={`flex items-center gap-3 rounded-2xl bg-card px-4 py-3 shadow-lg ring-1 transition-shadow ${
-                isSearching
-                  ? 'shadow-xl ring-zen-sage/40'
-                  : 'ring-border/60 focus-within:shadow-xl focus-within:ring-zen-sage/30'
-              }`}
-            >
-              <Search className="h-5 w-5 shrink-0 text-muted-foreground" />
-              <input
-                type="text"
-                value={search}
-                onChange={e => setSearch(e.target.value)}
-                placeholder={lang === 'he' ? 'חפש בכספת...' : 'Search your vault...'}
-                className="flex-1 bg-transparent text-sm text-foreground placeholder:text-muted-foreground/60 focus:outline-none"
-                dir={lang === 'he' ? 'rtl' : 'ltr'}
-              />
-              {isSearching ? (
-                <button
-                  onClick={() => setSearch('')}
-                  className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-secondary text-muted-foreground transition-colors hover:bg-border hover:text-foreground"
-                  aria-label="Clear search"
-                >
-                  <X className="h-4 w-4" />
-                </button>
-              ) : (
-                <button
-                  className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-zen-sage text-white transition-transform hover:scale-105 active:scale-95"
-                  aria-label="AI Search"
-                >
-                  <Sparkles className="h-4 w-4" />
-                </button>
-              )}
-            </div>
-          </div>
-        </motion.div>
+        {/* Mobile bottom navigation */}
+        <MobileBottomNav
+          onSettingsOpen={() => setSettingsOpen(true)}
+          hasDocuments={docs.length > 0}
+          canUpload={!isUploading}
+        />
       </div>
     </SettingsContext.Provider>
   );

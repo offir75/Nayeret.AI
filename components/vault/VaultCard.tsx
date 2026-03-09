@@ -2,7 +2,7 @@ import { useState, useRef, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { MoreVertical, StickyNote, Trash2, Share2 } from 'lucide-react';
 import { useSettings } from '@/lib/context/settings';
-import type { VaultDoc } from '@/lib/types';
+import type { VaultDoc, Currency } from '@/lib/types';
 import { typeConfig } from './CategoryBadge';
 import { convertAmount, fmtMoney } from '@/lib/vault/helpers';
 import { deleteDocument } from '@/lib/services/documents';
@@ -16,15 +16,15 @@ interface VaultCardProps {
   onOpen: (doc: VaultDoc) => void;
 }
 
-function getDisplayAmount(doc: VaultDoc, currency: 'ILS' | 'USD'): string | null {
+function getDisplayAmount(doc: VaultDoc, currency: Currency): string | null {
   const ra = doc.raw_analysis;
   if (!ra) return null;
   const raw = ra.total_amount ?? ra.total_balance ?? ra.premium_amount;
   if (raw == null) return null;
   const n = Number(raw);
   if (isNaN(n) || n <= 0) return null;
-  const symbol = currency === 'ILS' ? '₪' : '$';
   const converted = convertAmount(n, String(ra.currency ?? 'ILS'), currency);
+  const symbol = currency === 'USD' ? '$' : '₪';
   return fmtMoney(converted, symbol);
 }
 

@@ -1,43 +1,202 @@
+@import url('https://fonts.googleapis.com/css2?family=Heebo:wght@300;400;500;600;700;800&family=IBM+Plex+Mono:wght@400;500&display=swap');
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
-:root {
-  /* Zen palette: warm sand background, stone foreground, sage accent */
-  --background: #f5f0eb;
-  --foreground: #2c2825;
-  --card: #faf7f4;
-  --card-foreground: #2c2825;
-  --popover: #faf7f4;
-  --popover-foreground: #2c2825;
-  --primary: #2c2825;
-  --primary-foreground: #faf7f4;
-  --secondary: #ede8e2;
-  --secondary-foreground: #2c2825;
-  --muted: #ede8e2;
-  --muted-foreground: #8a8178;
-  --accent: #7a8c6e;
-  --accent-foreground: #faf7f4;
-  --destructive: #c4584a;
-  --destructive-foreground: #faf7f4;
-  --border: #ddd6ce;
-  --input: #ddd6ce;
-  --ring: #7a8c6e;
-  --radius: 0.75rem;
+@layer base {
+  :root {
+    /* ── Light mode: warm cream base, teal primary, blue-gray text ── */
+    --background:          40 30% 97%;
+    --foreground:         220 25% 14%;
 
-  /* Custom Zen tokens */
-  --zen-sage: #7a8c6e;
-  --zen-sage-light: #e8ede5;
-  --zen-sand: #f5f0eb;
-  --zen-stone: #2c2825;
-  --zen-warm: #c4a97d;
+    --card:                 0  0% 100%;
+    --card-foreground:    220 25% 14%;
+
+    --popover:              0  0% 100%;
+    --popover-foreground: 220 25% 14%;
+
+    --primary:            168 65% 38%;
+    --primary-foreground:   0  0% 100%;
+
+    --secondary:           40 20% 93%;
+    --secondary-foreground: 220 20% 40%;
+
+    --muted:               40 18% 93%;
+    --muted-foreground:   220 12% 50%;
+
+    --accent:             168 50% 32%;
+    --accent-foreground:    0  0% 100%;
+
+    --destructive:          0 68% 52%;
+    --destructive-foreground: 0 0% 100%;
+
+    --warning:             38 92% 50%;
+    --warning-foreground:   0  0% 100%;
+
+    --success:            152 55% 40%;
+    --success-foreground:   0  0% 100%;
+
+    --urgent:               0 68% 52%;
+    --urgent-foreground:    0  0% 100%;
+
+    --caution:             28 85% 52%;
+    --caution-foreground:   0  0% 100%;
+
+    --notice:              45 85% 48%;
+    --notice-foreground:  220 25% 14%;
+
+    --border:             220 14% 88%;
+    --input:              220 14% 88%;
+    --ring:               168 65% 38%;
+    --radius:               0.75rem;
+
+    /* ── Sidebar tokens ── */
+    --sidebar-background:             40 25% 96%;
+    --sidebar-foreground:            220 15% 40%;
+    --sidebar-primary:               168 65% 38%;
+    --sidebar-primary-foreground:      0  0% 100%;
+    --sidebar-accent:                 40 18% 93%;
+    --sidebar-accent-foreground:     220 25% 14%;
+    --sidebar-border:                220 14% 88%;
+    --sidebar-ring:                  168 65% 38%;
+
+    /* ── Document category colors ── */
+    --cat-identity:       260 50% 55%;
+    --cat-money:          168 65% 38%;
+    --cat-bills:          210 60% 48%;
+    --cat-insurance:       28 75% 50%;
+    --cat-trips:          330 55% 50%;
+
+    /* ── Font families ── */
+    --font-body: 'Heebo', sans-serif;
+    --font-mono: 'IBM Plex Mono', monospace;
+
+    /* ── Zen aliases — mapped to the teal primary palette so bg-zen-sage
+       and bg-primary always render the same teal color ── */
+    --zen-sage:       #229c76;   /* ≈ hsl(168 65% 38%) */
+    --zen-sage-light: #cbeee5;   /* ≈ hsl(168 55% 87%) */
+    --zen-sand:       #faf8f2;   /* ≈ hsl(40 30% 97%) */
+    --zen-stone:      #1b2333;   /* ≈ hsl(220 25% 14%) */
+    --zen-warm:       #c4a97d;
+  }
+
+  .dark {
+    --background:         222 25%  8%;
+    --foreground:          40 20% 92%;
+
+    --card:               222 20% 11%;
+    --card-foreground:     40 20% 92%;
+
+    --popover:            222 20% 11%;
+    --popover-foreground:  40 20% 92%;
+
+    --primary:            168 65% 42%;
+    --primary-foreground: 222 25%  8%;
+
+    --secondary:          222 16% 16%;
+    --secondary-foreground: 40 15% 75%;
+
+    --muted:              222 16% 16%;
+    --muted-foreground:   220 12% 55%;
+
+    --accent:             168 50% 36%;
+    --accent-foreground:  222 25%  8%;
+
+    --destructive:          0 72% 55%;
+    --destructive-foreground: 0 0% 100%;
+
+    --warning:             38 92% 50%;
+    --warning-foreground:   0  0% 100%;
+
+    --success:            152 55% 40%;
+    --success-foreground:   0  0% 100%;
+
+    --urgent:               0 72% 55%;
+    --urgent-foreground:    0  0% 100%;
+
+    --caution:             28 85% 52%;
+    --caution-foreground:   0  0% 100%;
+
+    --notice:              45 85% 48%;
+    --notice-foreground:  222 25%  8%;
+
+    --border:             222 14% 20%;
+    --input:              222 14% 20%;
+    --ring:               168 65% 42%;
+
+    --sidebar-background:            222 22% 10%;
+    --sidebar-foreground:            220 15% 60%;
+    --sidebar-primary:               168 65% 42%;
+    --sidebar-primary-foreground:    222 25%  8%;
+    --sidebar-accent:                222 16% 16%;
+    --sidebar-accent-foreground:      40 20% 92%;
+    --sidebar-border:                222 14% 20%;
+    --sidebar-ring:                  168 65% 42%;
+
+    --cat-identity:       260 50% 60%;
+    --cat-money:          168 65% 42%;
+    --cat-bills:          210 60% 55%;
+    --cat-insurance:       28 75% 55%;
+    --cat-trips:          330 55% 55%;
+
+    --font-body: 'Heebo', sans-serif;
+    --font-mono: 'IBM Plex Mono', monospace;
+
+    --zen-sage:       #27b386;
+    --zen-sage-light: #0f3028;
+    --zen-sand:       #0d1017;
+    --zen-stone:      #e8eaf2;
+    --zen-warm:       #c4a97d;
+  }
 }
 
 @layer base {
   * {
     @apply border-border;
   }
+
   body {
-    @apply bg-background text-foreground antialiased;
+    @apply bg-background text-foreground;
+    font-family: var(--font-body);
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  /* Thin scrollbars */
+  ::-webkit-scrollbar        { width: 6px; height: 6px; }
+  ::-webkit-scrollbar-track  { background: hsl(var(--background)); }
+  ::-webkit-scrollbar-thumb  { background: hsl(var(--border)); border-radius: 3px; }
+  ::-webkit-scrollbar-thumb:hover { background: hsl(var(--muted-foreground)); }
+
+  .scrollbar-none { scrollbar-width: none; -ms-overflow-style: none; }
+  .scrollbar-none::-webkit-scrollbar { display: none; }
+
+  .scrollbar-thin { scrollbar-width: thin; scrollbar-color: hsl(var(--border)) transparent; }
+}
+
+@layer utilities {
+  /* Glass card — used by all dashboard widgets */
+  .glass-card {
+    @apply bg-card border border-border/60 rounded-xl shadow-sm;
+  }
+
+  /* ₪ symbol */
+  .currency-ils-symbol {
+    font-family: var(--font-body);
+    font-weight: 700;
+    letter-spacing: 0.01em;
+    line-height: 1;
+  }
+
+  /* Primary glow */
+  .glow-primary {
+    box-shadow: 0 0 24px -8px hsl(var(--primary) / 0.18);
+  }
+
+  /* Gradient text: primary → accent */
+  .text-gradient {
+    @apply bg-clip-text text-transparent;
+    background-image: linear-gradient(to left, hsl(var(--primary)), hsl(var(--accent)));
   }
 }

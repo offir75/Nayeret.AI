@@ -55,13 +55,25 @@ export function readFileAsBase64(file: File): Promise<string> {
 
 // ─── Currency helpers ─────────────────────────────────────────────────────────
 
+/** Fixed exchange rate: 1 USD = ILS */
 export const USD_TO_ILS = 3.70;
 
+/**
+ * Convert `amount` between ILS and USD using a fixed rate.
+ * - ILS → ILS: no-op
+ * - any other currency → ILS: multiply by USD_TO_ILS (approximation)
+ * - ILS → USD: divide by USD_TO_ILS
+ */
 export function convertAmount(amount: number, fromCurr: string, toCurr: Currency): number {
-  const f = fromCurr.toUpperCase();
-  if (f === toCurr) return amount;
-  if (toCurr === 'USD') return amount / USD_TO_ILS;
-  return amount * USD_TO_ILS;
+  const from = fromCurr.toUpperCase();
+  if (from === toCurr) return amount;
+  if (toCurr === 'ILS') {
+    // Convert to ILS: assume foreign amounts approximate USD rate
+    return amount * USD_TO_ILS;
+  }
+  // toCurr === 'USD': convert from ILS to USD
+  if (from === 'ILS') return amount / USD_TO_ILS;
+  return amount;
 }
 
 export function fmtMoney(n: number, symbol: string): string {

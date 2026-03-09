@@ -20,5 +20,5 @@
     }
   },
   "include": ["next-env.d.ts", "**/*.ts", "**/*.tsx"],
-  "exclude": ["node_modules", "v0.app.design"]
+  "exclude": ["node_modules", "v0.app.design", "v0-new"]
 }
