@@ -121,10 +121,12 @@ export function enrichDoc(doc: VaultDoc): RichDoc {
     'net_amount', 'gross_amount', 'amount',
   );
 
-  const currency =
+  const rawCurrency =
     pickString(analysis, 'currency') ??
     pickString(insights, 'currency') ??
     'ILS';
+  // Normalise common aliases to standard ISO codes
+  const currency = rawCurrency === 'NIS' ? 'ILS' : rawCurrency.toUpperCase();
 
   const due_date = pickString(analysis, 'due_date', 'next_payment_date', 'payment_due_date');
 

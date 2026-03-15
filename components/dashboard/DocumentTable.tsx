@@ -10,7 +10,7 @@ function toStr(v: unknown): string {
   return String(v);
 }
 import { motion, AnimatePresence, PanInfo } from 'framer-motion';
-import { Trash2, ChevronDown, ChevronUp, ArrowUpDown, FileSpreadsheet, ArrowUpCircle, ArrowDownCircle, MinusCircle } from 'lucide-react';
+import { Trash2, ChevronDown, ChevronUp, ArrowUpDown, FileSpreadsheet, ArrowUpCircle, ArrowDownCircle, MinusCircle, Loader2 } from 'lucide-react';
 import type { RichDoc } from '@/lib/vault/docAdapter';
 import { DashboardCategoryBadge } from './DashboardCategoryBadge';
 import { ReviewStatusBadge } from './ReviewStatusBadge';
@@ -157,7 +157,7 @@ function TaxTagButton({ doc, onUpdateDoc, size = 'sm' }: { doc: RichDoc; onUpdat
 interface DocumentTableProps {
   documents: RichDoc[];
   onDocClick: (doc: RichDoc) => void;
-  onDeleteDoc?: (doc: RichDoc) => void;
+  onDeleteDoc?: (doc: RichDoc) => Promise<void> | void;
   onUpdateDoc?: (doc: RichDoc) => void;
 }
 
@@ -165,9 +165,10 @@ interface DocumentTableProps {
    Single document row (swipeable on mobile)
    ═══════════════════════════════════════════════ */
 
-function SwipeableRow({ doc, onDocClick, onDeleteDoc, onUpdateDoc }: { doc: RichDoc; onDocClick: (doc: RichDoc) => void; onDeleteDoc?: (doc: RichDoc) => void; onUpdateDoc?: (doc: RichDoc) => void }) {
+function SwipeableRow({ doc, onDocClick, onDeleteDoc, onUpdateDoc }: { doc: RichDoc; onDocClick: (doc: RichDoc) => void; onDeleteDoc?: (doc: RichDoc) => Promise<void> | void; onUpdateDoc?: (doc: RichDoc) => void }) {
   const { t, lang } = useLanguage();
   const [swiped, setSwiped] = useState(false);
+  const [deleting, setDeleting] = useState(false);
   const threshold = 80;
 
   const handleDragEnd = (_event: MouseEvent | TouchEvent | PointerEvent, info: PanInfo) => {
@@ -185,11 +186,22 @@ function SwipeableRow({ doc, onDocClick, onDeleteDoc, onUpdateDoc }: { doc: Rich
         style={{ justifyContent: swiped ? 'flex-start' : 'flex-end' }}
       >
         <button
-          onClick={(e) => { e.stopPropagation(); onDeleteDoc?.(doc); }}
+          onClick={async (e) => {
+            e.stopPropagation();
+            if (deleting) return;
+            setDeleting(true);
+            try {
+              await onDeleteDoc?.(doc);
+            } catch {
+              toast.error(lang === 'he' ? 'מחיקה נכשלה. נסה שוב.' : 'Failed to delete. Please try again.');
+              setDeleting(false);
+            }
+          }}
+          disabled={deleting}
           className="flex items-center gap-2 text-destructive-foreground font-medium text-sm"
         >
-          <Trash2 className="w-5 h-5" />
-          {t('deleteText')}
+          {deleting ? <Loader2 className="w-5 h-5 animate-spin" /> : <Trash2 className="w-5 h-5" />}
+          {!deleting && t('deleteText')}
         </button>
       </motion.div>
 
@@ -239,6 +251,7 @@ export function DocumentTable({ documents, onDocClick, onDeleteDoc, onUpdateDoc 
   const isMobile = useIsMobile();
   const [sortField, setSortField] = useState<SortField | null>(null);
   const [sortDir, setSortDir] = useState<SortDir>('asc');
+  const [deletingId, setDeletingId] = useState<string | null>(null);
 
   const handleSort = (field: SortField) => {
     if (sortField === field) {
@@ -246,6 +259,17 @@ export function DocumentTable({ documents, onDocClick, onDeleteDoc, onUpdateDoc 
     } else {
       setSortField(field);
       setSortDir('asc');
+    }
+  };
+
+  const handleDeleteDoc = async (doc: RichDoc) => {
+    if (deletingId) return;
+    setDeletingId(doc.id);
+    try {
+      await onDeleteDoc?.(doc);
+    } catch {
+      toast.error(lang === 'he' ? 'מחיקה נכשלה. נסה שוב.' : 'Failed to delete. Please try again.');
+      setDeletingId(null);
     }
   };
 
@@ -323,11 +347,20 @@ export function DocumentTable({ documents, onDocClick, onDeleteDoc, onUpdateDoc 
                     </td>
                     <td className="p-4">
                       <button
-                        onClick={(e) => { e.stopPropagation(); onDeleteDoc?.(doc); }}
-                        className="opacity-0 group-hover:opacity-100 transition-opacity p-1.5 rounded-lg hover:bg-destructive/10 text-muted-foreground hover:text-destructive"
+                        onClick={(e) => { e.stopPropagation(); void handleDeleteDoc(doc); }}
+                        disabled={!!deletingId}
+                        className={`transition-opacity p-1.5 rounded-lg text-muted-foreground ${
+                          deletingId === doc.id
+                            ? 'opacity-100'
+                            : deletingId
+                              ? 'opacity-0 group-hover:opacity-30 cursor-not-allowed'
+                              : 'opacity-0 group-hover:opacity-100 hover:bg-destructive/10 hover:text-destructive'
+                        }`}
                         title={t('deleteDoc')}
                       >
-                        <Trash2 className="w-4 h-4" />
+                        {deletingId === doc.id
+                          ? <Loader2 className="w-4 h-4 animate-spin" />
+                          : <Trash2 className="w-4 h-4" />}
                       </button>
                     </td>
                   </motion.tr>

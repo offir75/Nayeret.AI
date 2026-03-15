@@ -8,28 +8,11 @@ import {
   callGemini, ocrImage, ocrPdfFallback, describeImage,
   summarizeDocument, classifyDocument, classifyAgainstTypes, extractStructured, discoverDocumentType,
 } from '@/lib/services/ai';
-import type { DocumentType } from '@/lib/types';
 import type { DocumentTypeRow } from '@/lib/services/ai';
 import type { UICategory } from '@/nayeret_ai_schema_registry';
 
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const pdfParse = require('pdf-parse/lib/pdf-parse.js');
-
-// ── Name → legacy DocumentType mapping (keeps UI backwards-compatible) ─────────
-
-const NAME_TO_DOC_TYPE: Record<string, DocumentType> = {
-  'financial report':  'financial_report',
-  'bill':              'bill',
-  'receipt':           'receipt',
-  'insurance policy':  'insurance',
-  'identity':          'identification',
-  'claim':             'claim',
-  'other':             'other',
-};
-
-function nameToDocumentType(name: string): DocumentType {
-  return NAME_TO_DOC_TYPE[name.toLowerCase()] ?? 'other';
-}
 
 const REMINDER_OFFSETS_DAYS = [30, 14, 7] as const;
 
@@ -93,19 +76,10 @@ function normalizeCurrency(value: unknown): string | null {
   return null;
 }
 
-function legacyTypeToUiCategory(type: DocumentType): UICategory {
-  if (type === 'bill' || type === 'receipt') return 'Bills & Receipts';
-  if (type === 'insurance' || type === 'claim') return 'Insurance & Contracts';
-  if (type === 'identification') return 'Identity';
-  if (type === 'financial_report') return 'Money';
-  return 'Money';
-}
-
 /**
  * Infer ui_category from the matched taxonomy name when the DB row has no ui_category set.
- * More precise than legacyTypeToUiCategory because it pattern-matches the full taxonomy name.
  */
-function inferUiCategory(typeName: string, legacyType: DocumentType): UICategory {
+function inferUiCategory(typeName: string): UICategory {
   if (/hotel|resort|flight|travel|reservation|ticket|cruise|train|bus|ferry|boarding|rental|vacation/i.test(typeName))
     return 'Trips & Tickets';
   if (/insurance|policy|claim/i.test(typeName)) return 'Insurance & Contracts';
@@ -116,7 +90,7 @@ function inferUiCategory(typeName: string, legacyType: DocumentType): UICategory
     return 'Bills & Receipts';
   if (/pension|investment|savings|provident|fund|stock|dividend|loan|mortgage|bank/i.test(typeName))
     return 'Money';
-  return legacyTypeToUiCategory(legacyType);
+  return 'Money';
 }
 
 function normalizeUiCategory(value: unknown, fallback: UICategory): UICategory {
@@ -159,64 +133,6 @@ function computeLifecycleDates(sourceDateIso: string | null): {
     eventDate: sourceDateIso,
     nextReminderDate,
   };
-}
-
-// ── Tier 2: Semantic duplicate detection ──────────────────────────────────────
-
-const SEMANTIC_UNIQUE_FIELDS: Partial<Record<DocumentType, string[]>> = {
-  identification:   ['id_number'],
-  insurance:        ['policy_number'],
-  bill:             ['provider', 'due_date'],
-  receipt:          ['merchant', 'purchase_date'],
-  financial_report: ['liquidity_date'],
-  claim:            ['policy_number', 'claim_date'],
-};
-
-async function findSemanticDuplicate(
-  userId: string,
-  documentType: DocumentType,
-  rawMetadata: Record<string, unknown>,
-  excludeFileName: string,
-): Promise<{ id: string; file_name: string; original_filename: string | null; document_type: DocumentType } | null> {
-  try {
-    const fields = SEMANTIC_UNIQUE_FIELDS[documentType];
-    if (!fields) return null;
-
-    const safeRaw = rawMetadata ?? {};
-    const matchFields = fields.filter(f => safeRaw[f] != null && safeRaw[f] !== '');
-    if (matchFields.length === 0) return null;
-
-    const { data: candidates } = await supabaseAdmin
-      .from('documents')
-      .select('id, file_name, original_filename, document_type, raw_analysis')
-      .eq('owner_id', userId)
-      .eq('document_type', documentType)
-      .neq('file_name', excludeFileName);
-
-    if (!candidates?.length) return null;
-
-    for (const candidate of candidates) {
-      const ra = (candidate.raw_analysis as Record<string, unknown>) ?? {};
-      const allMatch = matchFields.every(f => {
-        const a = String(safeRaw[f] ?? '').toLowerCase().trim();
-        const b = String(ra[f] ?? '').toLowerCase().trim();
-        return a && b && a === b;
-      });
-      if (allMatch) {
-        return {
-          id: candidate.id,
-          file_name: candidate.file_name,
-          original_filename: (candidate.original_filename as string | null) ?? null,
-          document_type: candidate.document_type as DocumentType,
-        };
-      }
-    }
-
-    return null;
-  } catch (err) {
-    console.warn('[findSemanticDuplicate] Duplicate check failed:', String(err));
-    return null;
-  }
 }
 
 // ── Handler ───────────────────────────────────────────────────────────────────
@@ -342,13 +258,12 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
     // 3. Triage: is this a real document (not a photo/meme/logo)?
     const triageResult = await callGemini(
-      `Is the following text extracted from a financial, legal, identity, or business document ` +
-      `(bill, bank report, insurance policy, receipt, claim, ID, passport, contract)?
-` +
-      `Answer ONLY "yes" or "no".
-
-Text:
-${text.slice(0, 2000)}`
+      `Is the following text extracted from a real structured document?\n` +
+      `Examples include (but are not limited to): bill, invoice, bank report, insurance policy, receipt, claim, ` +
+      `ID card, passport, contract, flight ticket, boarding pass, hotel reservation, travel booking, train ticket, ` +
+      `car rental, cruise booking, trip itinerary, visa, tax return, pay stub, medical report, prescription.\n` +
+      `Answer ONLY "yes" or "no".\n\n` +
+      `Text:\n${text.slice(0, 2000)}`
     );
     if (!triageResult.toLowerCase().startsWith('y')) {
       const onelinerRaw = await callGemini(
@@ -438,20 +353,19 @@ ${text.slice(0, 1000)}`,
       }
     }
 
-    // legacyDocumentType: used only for semantic dedup (needs the enum value)
-    let legacyDocumentType = nameToDocumentType(matchedTypeName);
     let effectiveMatchedRow = matchedRow;
 
-    // Post-classification heuristic: override financial_report → bill when the text
-    // contains clear single-invoice signals (Hebrew bill keywords or English equivalents)
-    if (legacyDocumentType === 'financial_report') {
+    // Post-classification heuristic: override any "Financial Report" type → bill when
+    // the text contains clear single-invoice signals (Hebrew bill keywords or English equivalents)
+    if (/financial.report/i.test(matchedTypeName)) {
       const billPattern = /חשבונית|לתשלום|invoice|amount\s+due/i;
       if (billPattern.test(text.slice(0, 3000))) {
-        const billRow = activeTypes.find(t => nameToDocumentType(t.name) === 'bill');
-        legacyDocumentType = 'bill';
-        effectiveMatchedRow = billRow;
-        matchedTypeName = billRow?.name ?? 'Bill';
-        console.log('[classify] Overriding financial_report → bill due to bill keywords in text');
+        const billRow = activeTypes.find(t => /^(bill|invoice)/i.test(t.name));
+        if (billRow) {
+          effectiveMatchedRow = billRow;
+          matchedTypeName = billRow.name;
+          console.log('[classify] Overriding financial report → bill due to invoice keywords in text');
+        }
       }
     }
 
@@ -479,7 +393,19 @@ ${text.slice(0, 1000)}`,
           };
           console.log('[discover] New document type saved to DB:', discovered.name);
         } else {
-          console.warn('[discover] Failed to save new type:', insertError.message);
+          // Insert failed (likely duplicate key) — try to reuse the existing DB row
+          const { data: existingType } = await supabaseAdmin
+            .from('document_types')
+            .select('name, matching_description, display_name_he, ui_category, schema_definition, semantic_signals')
+            .eq('name', discovered.name)
+            .single();
+          if (existingType) {
+            matchedTypeName = (existingType as DocumentTypeRow).name;
+            effectiveMatchedRow = existingType as DocumentTypeRow;
+            console.log('[discover] Reusing existing type from DB:', matchedTypeName);
+          } else {
+            console.warn('[discover] Failed to save new type and no existing row found:', insertError.message);
+          }
         }
       }
     }
@@ -543,6 +469,20 @@ ${text.slice(0, 1000)}`,
       if (!isNaN(parsed)) insights.amount = parsed;
     }
 
+    // Late currency inference: amount is now resolved (possibly via AMOUNT_PRIORITY) but
+    // the earlier currency scan may have run before the amount was promoted.  Run again with
+    // a broader pattern that catches "USD20.00" / "20USD" (no strict word boundary needed).
+    if (insights.amount != null && !insights.currency) {
+      const SYM_MAP: Record<string, string> = { '$': 'USD', '₪': 'ILS', '€': 'EUR', '£': 'GBP' };
+      const codeMatch = text.match(/(USD|ILS|EUR|GBP)/i);
+      const symMatch  = text.match(/[₪$€£]/);
+      const inferred  = codeMatch?.[1]?.toUpperCase() ?? (symMatch ? SYM_MAP[symMatch[0]] : undefined);
+      if (inferred) {
+        insights.currency = inferred;
+        console.log('[extract] late currency inference:', inferred);
+      }
+    }
+
     // Confidence alignment: if Phase 2 extraction found strong field evidence
     // (≥3 verbatim matches), promote classifierConfidence toward the high threshold.
     if (classifierConfidence != null && classifierConfidence < 0.85) {
@@ -565,20 +505,26 @@ ${text.slice(0, 1000)}`,
 
     // 7. Bilingual Zen summary
     const summaries = await summarizeDocument(text);
-    // Summary-mirror: if extraction missed total_amount/amount but the bilingual summary
-    // already calculated a total (e.g. "4,470 Euro"), parse it as a last-resort fallback.
-    if (insights.total_amount == null && insights.amount == null && summaries.en) {
+    // Summary-mirror: if extraction missed amount OR currency, parse the bilingual summary
+    // as a last-resort fallback (e.g. "4,470 Euro" or "$20.00 USD").
+    // Also runs when amount is already set but currency is still missing.
+    const needsAmount   = insights.total_amount == null && insights.amount == null;
+    const needsCurrency = !insights.currency;
+    if ((needsAmount || needsCurrency) && summaries.en) {
       const moneyMatch = summaries.en.match(/([\d,]+(?:\.\d+)?)\s*(EUR|USD|ILS|GBP|Euro?s?)/i);
       if (moneyMatch) {
         const parsed = parseFloat(moneyMatch[1].replace(/,/g, ''));
         if (!isNaN(parsed) && parsed > 0) {
-          insights.total_amount = parsed;
-          insights.amount = parsed; // promote so mappedAmount picks it up
-          if (!insights.currency) {
+          if (needsAmount) {
+            insights.total_amount = parsed;
+            insights.amount = parsed; // promote so mappedAmount picks it up
+            console.log('[extract] summary-mirror fallback: total_amount =', parsed);
+          }
+          if (needsCurrency) {
             const sym = moneyMatch[2].toUpperCase();
             insights.currency = sym.startsWith('EUR') ? 'EUR' : sym;
+            console.log('[extract] summary-mirror fallback: currency =', insights.currency);
           }
-          console.log('[extract] summary-mirror fallback: total_amount =', parsed);
         }
       }
     }
@@ -593,7 +539,7 @@ ${text.slice(0, 1000)}`,
     const mappedProvider = toNonEmptyString(insights.provider_name ?? insights.provider);
     const mappedUiCategory = normalizeUiCategory(
       (effectiveMatchedRow as DocumentTypeRow | undefined)?.ui_category,
-      inferUiCategory(matchedTypeName, legacyDocumentType),
+      inferUiCategory(matchedTypeName),
     );
     const lifecycle = computeLifecycleDates(mappedDueDate ?? mappedIssueDate);
 
@@ -631,12 +577,6 @@ ${text.slice(0, 1000)}`,
       return;
     }
 
-    // 9. Tier 2 semantic duplicate check
-    const semanticMatch = await findSemanticDuplicate(userId, legacyDocumentType, insights, filename);
-    if (semanticMatch) {
-      console.log('[dedup] Semantic match found:', semanticMatch.id, 'for new doc:', filename);
-    }
-
     res.status(200).json({
       success: true,
       filename,
@@ -646,7 +586,7 @@ ${text.slice(0, 1000)}`,
       document_type: matchedTypeName,
       raw_metadata: insights,
       supabaseId: supaData?.[0]?.id ?? null,
-      semanticMatch: semanticMatch ?? null,
+      semanticMatch: null,
     })
 
 

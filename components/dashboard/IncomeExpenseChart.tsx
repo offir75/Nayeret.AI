@@ -8,13 +8,12 @@ import { ChartContainer, ChartTooltip, ChartTooltipContent } from '@/components/
 import { AnimatePresence, motion } from 'framer-motion';
 import { usePersistentCollapsed } from '@/hooks/usePersistentCollapsed';
 import { CurrencyAmount } from '@/components/ui/currency-amount';
+import { TO_ILS } from '@/lib/fx';
 
 interface IncomeExpenseChartProps {
   documents: RichDoc[];
 }
 
-// Rough FX rates for display aggregation (ILS base)
-const TO_ILS: Record<string, number> = { ILS: 1, USD: 3.6, EUR: 3.95, GBP: 4.5 };
 
 const chartConfig = {
   income:  { label: 'Income',   color: 'hsl(var(--success))'          },

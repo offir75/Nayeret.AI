@@ -1,5 +1,5 @@
 import Head from 'next/head';
-import { Settings, Shield, Camera, Upload, Loader2, CheckCircle2, ScanLine, X, Eye, EyeOff } from 'lucide-react';
+import { Settings, Camera, Upload, Loader2, CheckCircle2, ScanLine, X, Eye, EyeOff, ChevronDown, MoreVertical, RotateCcw, LogOut, Lock } from 'lucide-react';
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useRouter } from 'next/router';
 import { useDropzone } from 'react-dropzone';
@@ -18,12 +18,12 @@ import {
 import { fetchDocuments, uploadFileApi, analyzeFileApi, saveThumbnailApi, deleteDocument, updateDocument } from '@/lib/services/documents';
 import { SUPPORTED_CATEGORIES, categoryLabel } from '@/lib/vault/categories';
 import { VaultSummaryBar, DuplicateDialog, SemanticMatchToast } from '@/components/vault';
-import DocumentDrawer from '@/components/vault/DocumentDrawer';
 import DocumentModal from '@/components/vault/DocumentModal';
-import VaultCard from '@/components/vault/VaultCard';
 import IngestionHub from '@/components/vault/IngestionHub';
-import { enrichDocs } from '@/lib/vault/docAdapter';
+import { enrichDocs, enrichDoc } from '@/lib/vault/docAdapter';
 import type { RichDoc } from '@/lib/vault/docAdapter';
+import { FixerSidebar } from '@/components/dashboard/FixerSidebar';
+import { useIsMobile } from '@/hooks/use-mobile';
 import { SettingsDrawer } from '@/components/dashboard/SettingsDrawer';
 import { MobileBottomNav } from '@/components/dashboard/MobileBottomNav';
 import { MetricCards } from '@/components/dashboard/MetricCards';
@@ -39,6 +39,7 @@ import { EmptyState } from '@/components/dashboard/EmptyState';
 import { GlobalSearch } from '@/components/dashboard/GlobalSearch';
 import { DocumentTable } from '@/components/dashboard/DocumentTable';
 import { FilterEmptyState } from '@/components/dashboard/FilterEmptyState';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 
 // Chart components use recharts (ESM) — must be dynamically imported to avoid SSR issues
 const SpendingInsights = dynamic(
@@ -47,6 +48,14 @@ const SpendingInsights = dynamic(
 );
 const IncomeExpenseChart = dynamic(
   () => import('@/components/dashboard/IncomeExpenseChart').then(m => ({ default: m.IncomeExpenseChart })),
+  { ssr: false },
+);
+const TaxSummaryCard = dynamic(
+  () => import('@/components/dashboard/TaxSummaryCard').then(m => ({ default: m.TaxSummaryCard })),
+  { ssr: false },
+);
+const BankReconciliation = dynamic(
+  () => import('@/components/dashboard/BankReconciliation').then(m => ({ default: m.BankReconciliation })),
   { ssr: false },
 );
 
@@ -197,7 +206,7 @@ function CaptureZone({ onFiles, isDragActive, lang }: {
   const filesRef = useRef<HTMLInputElement>(null);
   const desktopRef = useRef<HTMLInputElement>(null);
 
-  const accepted = 'image/*,.pdf,.heic,.heif';
+  const accepted = '.jpg,.jpeg,.png,.gif,.webp,.heic,.heif,.tiff,.bmp,.pdf';
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(e.target.files ?? []);
@@ -232,7 +241,7 @@ function CaptureZone({ onFiles, isDragActive, lang }: {
       Icon: GalleryIcon,
       label: lang === 'he' ? 'גלריה' : 'Gallery',
       sublabel: lang === 'he' ? 'בחר תמונה' : 'Pick photo',
-      accept: 'image/*',
+      accept: accepted,
       capture: false,
       primary: false,
     },
@@ -252,11 +261,7 @@ function CaptureZone({ onFiles, isDragActive, lang }: {
       initial={{ opacity: 0, y: 16 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.5, delay: 0.1 }}
-      className="px-4 pt-4 md:px-8"
     >
-      <h2 className="mb-3 text-sm font-semibold text-muted-foreground">
-        {lang === 'he' ? 'העלאת מסמכים' : 'Upload Documents'}
-      </h2>
 
       {/* Mobile: 3-button grid */}
       <div className="grid grid-cols-3 gap-3 md:hidden">
@@ -305,7 +310,7 @@ function CaptureZone({ onFiles, isDragActive, lang }: {
 
       {/* Hidden inputs */}
       <input ref={cameraRef}  type="file" accept="image/*" capture="environment" onChange={handleChange} className="hidden" />
-      <input ref={galleryRef} type="file" accept="image/*" multiple onChange={handleChange} className="hidden" />
+      <input ref={galleryRef} type="file" accept={accepted} multiple onChange={handleChange} className="hidden" />
       <input ref={filesRef}   type="file" accept={accepted} multiple onChange={handleChange} className="hidden" />
       <input ref={desktopRef} type="file" accept={accepted} multiple onChange={handleChange} className="hidden" />
     </motion.section>
@@ -436,6 +441,8 @@ function SkeletonCards() {
 
 // ── Main Dashboard ────────────────────────────────────────────────────────────
 
+type DashboardTabId = 'documents' | 'milestones' | 'income-expense' | 'spending' | 'tax' | 'reconciliation';
+
 export default function Dashboard() {
   const router = useRouter();
 
@@ -455,10 +462,15 @@ export default function Dashboard() {
   const [uploadQueue, setUploadQueue] = useState<UploadJob[]>([]);
   const cancelledIds = useRef<Set<string>>(new Set());
   const [search, setSearch] = useState('');
-  const [selectedDoc, setSelectedDoc] = useState<VaultDoc | null>(null);
+  const [selectedDoc, setSelectedDoc] = useState<RichDoc | null>(null);
+  const [openDocId, setOpenDocId] = useState<string | null>(null);
   const [fullViewDoc, setFullViewDoc] = useState<VaultDoc | null>(null);
   const [metricFilter, setMetricFilter] = useState<MetricFilter>(null);
   const [onboarded, setOnboarded] = useState<boolean | null>(null);
+  const [activeTab, setActiveTab] = useState<DashboardTabId>('documents');
+  const [taxJumpDate, setTaxJumpDate] = useState<{ year: number; month: number } | null>(null);
+  const isMobile = useIsMobile();
+  const swipeTabRef = useRef<{ x: number; y: number } | null>(null);
 
   // ── Deduplication state ───────────────────────────────────────────────────────
   const [tier1Conflict, setTier1Conflict] = useState<{
@@ -523,12 +535,21 @@ export default function Dashboard() {
   // ── Handle redirect from /capture ────────────────────────────────────────────
   useEffect(() => {
     if (router.query.docAdded !== '1') return;
+    const targetId = typeof router.query.openDoc === 'string' ? router.query.openDoc : null;
     void router.replace('/');
     if (!session) return;
     const token = session.access_token;
+    // Uploads are complete before /capture redirects here, so a short delay is enough
     setTimeout(() => {
-      fetchDocuments(token).then(setDocs).catch(() => {});
-    }, 3000);
+      fetchDocuments(token).then(docs => {
+        setDocs(docs);
+        if (targetId) {
+          const match = enrichDocs(docs).find(d => d.id === targetId);
+          if (match) setSelectedDoc(match);
+          else setOpenDocId(targetId); // doc not in list yet, retry after load
+        }
+      }).catch(() => {});
+    }, 1500);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [router.query.docAdded]);
 
@@ -669,22 +690,127 @@ export default function Dashboard() {
     } catch {}
   };
 
+  // Route dropped/picked files through the capture wizard instead of direct upload
+  const handleCaptureZoneFiles = useCallback(async (files: File[]) => {
+    const valid = files.filter(f => isSupportedFile(f.name) || f.type.startsWith('image/') || f.type === 'application/pdf');
+    if (valid.length === 0) return;
+    const dataUrls = await Promise.all(valid.map(f => new Promise<string>((resolve) => {
+      const reader = new FileReader();
+      reader.onload = e => resolve(e.target!.result as string);
+      reader.readAsDataURL(f);
+    })));
+    sessionStorage.setItem('captureFiles', JSON.stringify(dataUrls));
+    void router.push('/capture');
+  }, [router]);
+
   const { getRootProps, isDragActive } = useDropzone({
-    onDrop: handleFiles,
+    onDrop: handleCaptureZoneFiles,
     accept: { 'application/pdf': ['.pdf'], 'image/*': ['.png', '.jpg', '.jpeg', '.tiff', '.bmp', '.heic', '.heif'] },
     noClick: true,
     noKeyboard: true,
   });
 
   const isUploading = uploadQueue.some(j => j.status === 'queued' || j.status === 'analyzing');
-  const handleDelete = (id: string) => setDocs(prev => prev.filter(d => d.id !== id));
+  const handleDelete = useCallback(async (id: string) => {
+    if (!session?.access_token) return;
+    await deleteDocument(id, session.access_token); // throws on failure — callers handle the error
+    setDocs(prev => prev.filter(d => d.id !== id));
+    if (selectedDoc?.id === id) setSelectedDoc(null);
+  }, [session, selectedDoc]);
   const handleUpdate = (updated: VaultDoc) => {
     setDocs(prev => prev.map(d => d.id === updated.id ? updated : d));
-    setSelectedDoc(prev => prev?.id === updated.id ? updated : prev);
+    setSelectedDoc(prev => prev?.id === updated.id ? enrichDoc(updated) : prev);
     setFullViewDoc(prev => prev?.id === updated.id ? updated : prev);
   };
 
+  // Bridge: FixerSidebar works with RichDoc; persists changes via the API then syncs local state.
+  const handleFixerUpdate = useCallback((updatedDoc: RichDoc) => {
+    // Detect tax_tagged transition to true so we can auto-navigate
+    const prev = docs.find(d => d.id === updatedDoc.id);
+    const prevTagged = !!(prev?.raw_analysis as Record<string, unknown> | null)?.tax_tagged
+                    || !!(prev?.insights   as Record<string, unknown> | null)?.tax_tagged;
+    const taxJustTagged = updatedDoc.tax_tagged === true && !prevTagged;
+
+    // Optimistic update
+    setSelectedDoc(updatedDoc);
+    setDocs(prev => prev.map(d => d.id === updatedDoc.id ? (updatedDoc as unknown as VaultDoc) : d));
+
+    if (taxJustTagged) {
+      const dateStr = updatedDoc.issue_date || updatedDoc.created_at?.split('T')[0];
+      const d = dateStr ? new Date(dateStr) : new Date();
+      setTaxJumpDate({ year: d.getFullYear(), month: d.getMonth() });
+      setActiveTab('tax');
+    }
+
+    if (!session) return;
+    // Persist to DB: write user-edited fields back into raw_analysis so the adapter picks them up
+    updateDocument(
+      updatedDoc.id,
+      {
+        user_notes:  updatedDoc.user_notes ?? undefined,
+        ui_category: updatedDoc.ui_category ?? undefined,
+        raw_analysis: {
+          ...updatedDoc.raw_analysis,
+          total_amount:     updatedDoc.amount,
+          due_date:         updatedDoc.due_date,
+          tax_tagged:       updatedDoc.tax_tagged,
+          transaction_type: updatedDoc.transaction_type,
+        },
+      },
+      session.access_token,
+    ).then(saved => handleUpdate(saved)).catch(() => {});
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [session, docs]);
+
+  // Handler for DocumentTable inline updates (tax tag, transaction type).
+  // Persists the changed field into raw_analysis so enrichDoc picks it up after reload.
+  const handleDocTableUpdate = useCallback((updatedRichDoc: RichDoc) => {
+    const prev = docs.find(d => d.id === updatedRichDoc.id);
+    const prevTagged = !!(prev?.raw_analysis as Record<string, unknown> | null)?.tax_tagged
+                    || !!(prev?.insights   as Record<string, unknown> | null)?.tax_tagged;
+    const taxJustTagged = updatedRichDoc.tax_tagged === true && !prevTagged;
+
+    // Write derived fields back into raw_analysis for correct re-enrichment
+    const patchedVaultDoc: VaultDoc = {
+      ...(updatedRichDoc as unknown as VaultDoc),
+      raw_analysis: {
+        ...(prev?.raw_analysis as Record<string, unknown> ?? {}),
+        tax_tagged:       updatedRichDoc.tax_tagged,
+        transaction_type: updatedRichDoc.transaction_type,
+      },
+    };
+    handleUpdate(patchedVaultDoc);
+
+    if (taxJustTagged) {
+      const dateStr = updatedRichDoc.issue_date || updatedRichDoc.created_at?.split('T')[0];
+      const d = dateStr ? new Date(dateStr) : new Date();
+      setTaxJumpDate({ year: d.getFullYear(), month: d.getMonth() });
+      setActiveTab('tax');
+    }
+
+    if (!session) return;
+    updateDocument(
+      updatedRichDoc.id,
+      {
+        raw_analysis: {
+          ...(prev?.raw_analysis as Record<string, unknown> ?? {}),
+          tax_tagged:       updatedRichDoc.tax_tagged,
+          transaction_type: updatedRichDoc.transaction_type,
+        },
+      },
+      session.access_token,
+    ).then(saved => handleUpdate(saved)).catch(() => {});
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [session, docs]);
+
   const richDocs = useMemo(() => enrichDocs(docs), [docs]);
+
+  // Open a specific doc after redirect from /capture (card click)
+  useEffect(() => {
+    if (!openDocId || richDocs.length === 0) return;
+    const match = richDocs.find(d => d.id === openDocId);
+    if (match) { setSelectedDoc(match); setOpenDocId(null); }
+  }, [openDocId, richDocs]);
 
   const q = search.toLowerCase();
   const filtered = useMemo(() => docs.filter(d =>
@@ -724,6 +850,42 @@ export default function Dashboard() {
       }
     });
   }, [richDocs, search, metricFilter]);
+
+  // ── Dashboard tab helpers ──────────────────────────────────────────────────
+
+  const TABS: Array<{ id: DashboardTabId; labelHe: string; labelEn: string }> = [
+    { id: 'documents',      labelHe: 'מסמכים',            labelEn: 'Documents'          },
+    { id: 'milestones',     labelHe: 'אבני דרך',           labelEn: 'Milestones'         },
+    { id: 'tax',            labelHe: 'תיק מס',             labelEn: 'Tax Folder'         },
+    { id: 'spending',       labelHe: 'תובנות הוצאות',      labelEn: 'Spending Insights'  },
+    { id: 'income-expense', labelHe: 'הכנסות מול הוצאות',  labelEn: 'Income vs Expenses' },
+    { id: 'reconciliation', labelHe: 'התאמת בנק',          labelEn: 'Bank Reconciliation'},
+  ];
+
+  const moveTab = useCallback((direction: 1 | -1) => {
+    setActiveTab(prev => {
+      const idx = TABS.findIndex(t => t.id === prev);
+      const next = idx + direction;
+      if (next < 0 || next >= TABS.length) return prev;
+      return TABS[next].id;
+    });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const handleTabTouchStart = useCallback((e: React.TouchEvent) => {
+    if (!isMobile || docs.length === 0) return;
+    swipeTabRef.current = { x: e.touches[0].clientX, y: e.touches[0].clientY };
+  }, [isMobile, docs.length]);
+
+  const handleTabTouchEnd = useCallback((e: React.TouchEvent) => {
+    if (!isMobile || docs.length === 0 || !swipeTabRef.current) return;
+    const dx = e.changedTouches[0].clientX - swipeTabRef.current.x;
+    const dy = e.changedTouches[0].clientY - swipeTabRef.current.y;
+    swipeTabRef.current = null;
+    if (Math.abs(dx) < 60 || Math.abs(dx) < Math.abs(dy)) return;
+    // RTL: swipe left = next tab, swipe right = prev tab (same as LTR because tabs scroll horizontally)
+    moveTab(dx < 0 ? 1 : -1);
+  }, [isMobile, docs.length, moveTab]);
 
   // ── Auth loading gate ──────────────────────────────────────────────────────────
 
@@ -799,26 +961,15 @@ export default function Dashboard() {
           />
         )}
 
-        <DocumentDrawer
-          doc={selectedDoc}
-          token={session?.access_token ?? ''}
+        <FixerSidebar
+          document={selectedDoc}
+          documents={displayedRichDocs}
           open={!!selectedDoc}
           onClose={() => setSelectedDoc(null)}
-          onUpdate={handleUpdate}
-          onDelete={handleDelete}
-          onViewFull={() => selectedDoc && setFullViewDoc(selectedDoc)}
-          hasPrev={selectedDoc ? displayedRichDocs.findIndex(d => d.id === selectedDoc.id) > 0 : false}
-          hasNext={selectedDoc ? displayedRichDocs.findIndex(d => d.id === selectedDoc.id) < displayedRichDocs.length - 1 : false}
-          onPrev={() => {
-            if (!selectedDoc) return;
-            const idx = displayedRichDocs.findIndex(d => d.id === selectedDoc.id);
-            if (idx > 0) setSelectedDoc(displayedRichDocs[idx - 1]);
-          }}
-          onNext={() => {
-            if (!selectedDoc) return;
-            const idx = displayedRichDocs.findIndex(d => d.id === selectedDoc.id);
-            if (idx < displayedRichDocs.length - 1) setSelectedDoc(displayedRichDocs[idx + 1]);
-          }}
+          onUpdateDoc={handleFixerUpdate}
+          onDelete={(doc) => { void handleDelete(doc.id); }}
+          onNavigate={(doc) => setSelectedDoc(doc)}
+          token={session?.access_token ?? ''}
         />
 
         {/* Full-screen document viewer — outside Vaul so events are unaffected */}
@@ -839,37 +990,57 @@ export default function Dashboard() {
           className="sticky top-0 z-40 border-b border-border/50 bg-card/80 backdrop-blur-xl"
           style={{ paddingTop: 'env(safe-area-inset-top)' }}
         >
-          <div className="flex items-center gap-3 px-4 py-3 md:px-8">
-            <div className="flex items-center gap-3 min-w-0 flex-1">
-              <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-zen-sage">
-                <Shield className="h-5 w-5 text-white" />
-              </div>
-              <h1 className="hidden sm:block text-base font-bold tracking-tight text-foreground shrink-0">Nayeret.AI</h1>
-              {docs.length > 0 && (
-                <div className="hidden sm:block flex-1 max-w-xs">
-                  <GlobalSearch value={search} onChange={setSearch} />
+          <div className="max-w-7xl mx-auto px-3 sm:px-6 py-2.5 sm:py-3 flex items-center justify-between gap-2 sm:gap-3">
+            {/* ── Left: user identity pill (WorkspaceSwitcher-style) + desktop search ── */}
+            <div className="flex items-center gap-2 sm:gap-3 min-w-0 flex-1">
+              <button
+                onClick={() => setSettingsOpen(true)}
+                className="flex items-center gap-2 px-2.5 sm:px-3 py-2 rounded-xl bg-muted/50 hover:bg-muted transition-colors cursor-pointer group min-w-0 max-w-[200px] sm:max-w-none shrink-0"
+              >
+                <div className="w-8 h-8 rounded-full bg-zen-sage/20 flex items-center justify-center text-xs font-semibold text-zen-stone overflow-hidden shrink-0">
+                  {user.user_metadata?.avatar_url && !headerAvatarError ? (
+                    <img
+                      src={user.user_metadata.avatar_url as string}
+                      alt="avatar"
+                      className="w-full h-full object-cover"
+                      onError={() => setHeaderAvatarError(true)}
+                    />
+                  ) : initials}
                 </div>
-              )}
+                <div className="text-start min-w-0">
+                  <p className="text-sm font-semibold text-foreground leading-tight truncate">
+                    {(user.user_metadata?.full_name as string | undefined) ?? user.email?.split('@')[0] ?? 'Nayeret.AI'}
+                  </p>
+                  <p className="text-[10px] text-muted-foreground flex items-center gap-1">
+                    <Lock className="w-3 h-3 shrink-0" />
+                    {lang === 'he' ? 'אישי' : 'Personal'}
+                  </p>
+                </div>
+                <ChevronDown className="w-3.5 h-3.5 text-muted-foreground group-hover:text-foreground transition-colors ms-1 shrink-0" />
+              </button>
+              <div className="hidden sm:block flex-1 max-w-xs">
+                <GlobalSearch value={search} onChange={setSearch} />
+              </div>
             </div>
 
-            <div className="flex items-center gap-2 shrink-0">
-              {docs.length > 0 && (
-                <button
-                  onClick={() => void router.push('/capture')}
-                  className="hidden sm:flex h-9 items-center gap-2 rounded-xl bg-zen-sage px-4 text-sm font-medium text-white transition-colors hover:bg-zen-sage/90"
-                >
-                  <ScanLine className="h-4 w-4" />
-                  {lang === 'he' ? 'סרוק' : 'Scan'}
-                </button>
-              )}
+            {/* ── Right: actions ── */}
+            <div className="flex items-center gap-1.5 sm:gap-3 shrink-0">
+              {/* Scan — always visible on desktop; mobile uses MobileBottomNav */}
+              <button
+                onClick={() => void router.push('/capture')}
+                className="hidden sm:flex h-9 items-center gap-2 rounded-xl bg-zen-sage px-4 text-sm font-medium text-white transition-colors hover:bg-zen-sage/90"
+              >
+                <ScanLine className="h-4 w-4" />
+                {lang === 'he' ? 'סרוק' : 'Scan'}
+              </button>
               <NotificationBell documents={richDocs} onDocClick={(doc: RichDoc) => setSelectedDoc(doc)} />
-              {/* Privacy mode toggle — always visible */}
+              {/* Privacy mode toggle */}
               <button
                 onClick={() => setPrivacyMode(!privacyMode)}
                 className={`flex h-9 w-9 items-center justify-center rounded-xl transition-colors ${
                   privacyMode
                     ? 'bg-primary/10 text-primary hover:bg-primary/20'
-                    : 'bg-secondary text-muted-foreground hover:bg-border hover:text-foreground'
+                    : 'bg-muted/50 text-muted-foreground hover:bg-muted hover:text-foreground'
                 }`}
                 title={privacyMode
                   ? (lang === 'he' ? 'הצג סכומים' : 'Show amounts')
@@ -877,28 +1048,84 @@ export default function Dashboard() {
               >
                 {privacyMode ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
               </button>
-              <div className="w-9 h-9 rounded-full bg-zen-sage/20 flex items-center justify-center text-xs font-medium text-zen-stone overflow-hidden flex-shrink-0">
-                {user.user_metadata?.avatar_url && !headerAvatarError ? (
-                  <img
-                    src={user.user_metadata.avatar_url as string}
-                    alt="avatar"
-                    className="w-full h-full object-cover"
-                    onError={() => setHeaderAvatarError(true)}
-                  />
-                ) : initials}
-              </div>
+              {/* Settings button — always visible */}
               <button
                 onClick={() => setSettingsOpen(true)}
-                className="flex h-9 w-9 items-center justify-center rounded-xl bg-secondary text-muted-foreground transition-colors hover:bg-border hover:text-foreground"
+                className="flex w-9 h-9 rounded-xl bg-muted/50 items-center justify-center hover:bg-muted transition-colors cursor-pointer shrink-0"
                 title={lang === 'he' ? 'הגדרות' : 'Settings'}
               >
-                <Settings className="h-4 w-4" />
+                <Settings className="w-4 h-4 text-muted-foreground" />
               </button>
+              {/* Overflow menu — desktop */}
+              <Popover>
+                <PopoverTrigger asChild>
+                  <button className="hidden sm:flex w-9 h-9 rounded-xl bg-muted/50 items-center justify-center hover:bg-muted transition-colors cursor-pointer shrink-0">
+                    <MoreVertical className="w-4 h-4 text-muted-foreground" />
+                  </button>
+                </PopoverTrigger>
+                <PopoverContent align="end" className="w-52 p-1">
+                  <button
+                    onClick={() => { setOnboarded(false); }}
+                    className="flex items-center gap-2 w-full px-3 py-2 rounded-md text-sm text-foreground hover:bg-accent transition-colors"
+                  >
+                    <RotateCcw className="w-4 h-4 text-muted-foreground" />
+                    {lang === 'he' ? 'הפעל מחדש' : 'Reset & Restart'}
+                  </button>
+                  <div className="h-px bg-border/50 my-1" />
+                  <button
+                    onClick={() => void supabase.auth.signOut()}
+                    className="flex items-center gap-2 w-full px-3 py-2 rounded-md text-sm text-destructive hover:bg-destructive/10 transition-colors"
+                  >
+                    <LogOut className="w-4 h-4" />
+                    {lang === 'he' ? 'התנתק' : 'Sign out'}
+                  </button>
+                </PopoverContent>
+              </Popover>
+              {/* Overflow menu — mobile */}
+              <Popover>
+                <PopoverTrigger asChild>
+                  <button className="sm:hidden w-8 h-8 rounded-xl bg-muted/50 flex items-center justify-center hover:bg-muted transition-colors cursor-pointer shrink-0">
+                    <MoreVertical className="w-4 h-4 text-muted-foreground" />
+                  </button>
+                </PopoverTrigger>
+                <PopoverContent align="end" className="w-52 p-1">
+                  <button
+                    onClick={() => void router.push('/capture')}
+                    className="flex items-center gap-2 w-full px-3 py-2 rounded-md text-sm text-foreground hover:bg-accent transition-colors"
+                  >
+                    <ScanLine className="w-4 h-4 text-muted-foreground" />
+                    {lang === 'he' ? 'סרוק מסמך' : 'Scan Document'}
+                  </button>
+                  <div className="h-px bg-border/50 my-1" />
+                  <button
+                    onClick={() => setSettingsOpen(true)}
+                    className="flex items-center gap-2 w-full px-3 py-2 rounded-md text-sm text-foreground hover:bg-accent transition-colors"
+                  >
+                    <Settings className="w-4 h-4 text-muted-foreground" />
+                    {lang === 'he' ? 'הגדרות' : 'Settings'}
+                  </button>
+                  <button
+                    onClick={() => { setOnboarded(false); }}
+                    className="flex items-center gap-2 w-full px-3 py-2 rounded-md text-sm text-foreground hover:bg-accent transition-colors"
+                  >
+                    <RotateCcw className="w-4 h-4 text-muted-foreground" />
+                    {lang === 'he' ? 'הפעל מחדש' : 'Reset & Restart'}
+                  </button>
+                  <div className="h-px bg-border/50 my-1" />
+                  <button
+                    onClick={() => void supabase.auth.signOut()}
+                    className="flex items-center gap-2 w-full px-3 py-2 rounded-md text-sm text-destructive hover:bg-destructive/10 transition-colors"
+                  >
+                    <LogOut className="w-4 h-4" />
+                    {lang === 'he' ? 'התנתק' : 'Sign out'}
+                  </button>
+                </PopoverContent>
+              </Popover>
             </div>
           </div>
           {/* Mobile search row */}
           {docs.length > 0 && (
-            <div className="sm:hidden px-4 pb-3">
+            <div className="sm:hidden px-3 pb-2.5">
               <GlobalSearch value={search} onChange={setSearch} />
             </div>
           )}
@@ -906,8 +1133,6 @@ export default function Dashboard() {
 
         {/* ── Main content ── */}
         <main className="max-w-7xl mx-auto px-4 sm:px-6 py-6 space-y-6">
-
-          <CaptureZone onFiles={handleFiles} isDragActive={isDragActive} lang={lang} />
 
           <IngestionHub queue={uploadQueue} lang={lang} onCancel={id => {
             cancelledIds.current.add(id);
@@ -926,7 +1151,7 @@ export default function Dashboard() {
           {loadingLibrary ? (
             <DashboardSkeleton />
           ) : docs.length === 0 && !isSearching ? (
-            <EmptyState onFiles={handleFiles} />
+            <EmptyState onFiles={handleCaptureZoneFiles} />
           ) : (
             <motion.div
               initial={{ opacity: 0 }}
@@ -934,22 +1159,55 @@ export default function Dashboard() {
               transition={{ duration: 0.4, delay: 0.3 }}
               className="space-y-6 pb-28"
             >
-              {!isSearching && <EngagementBar documents={richDocs} />}
-
-              {/* Critical Alerts — always visible, full width */}
+            {/* ── Dashboard tab bar ── */}
               {!isSearching && (
-                <CriticalTimeline documents={richDocs} onDocClick={(doc: RichDoc) => setSelectedDoc(doc)} />
+                <div className="sticky top-[3.2rem] sm:top-[3.7rem] z-20 bg-background/80 backdrop-blur-md border-b border-border/40 -mx-4 sm:-mx-6 px-4 sm:px-6 py-2 overflow-x-auto scrollbar-thin">
+                  <div className="flex items-center gap-1.5 min-w-max">
+                    {TABS.map((tab) => {
+                      const active = tab.id === activeTab;
+                      return (
+                        <button
+                          key={tab.id}
+                          onClick={() => setActiveTab(tab.id)}
+                          className={`px-3.5 py-1.5 sm:px-3.5 sm:py-1 rounded-full text-sm sm:text-xs font-semibold tracking-wide transition-all whitespace-nowrap border ${
+                            active
+                              ? 'bg-primary/12 text-primary border-primary/30 shadow-sm'
+                              : 'bg-transparent text-muted-foreground border-transparent hover:text-foreground hover:bg-muted/50'
+                          }`}
+                        >
+                          {lang === 'he' ? tab.labelHe : tab.labelEn}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
               )}
 
-              {/* Milestone tracker */}
-              {!isSearching && <MilestoneCard documents={richDocs} />}
-
-              {/* Analytics — Spending + Cash Flow side by side */}
-              {!isSearching && docs.length > 0 && (
-                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                  <SpendingInsights documents={richDocs} />
-                  <IncomeExpenseChart documents={richDocs} />
+              {/* ── Tab content panels ── */}
+              {!isSearching && (
+                <div onTouchStart={handleTabTouchStart} onTouchEnd={handleTabTouchEnd}>
+                  <AnimatePresence mode="wait">
+                    <motion.div
+                      key={activeTab}
+                      initial={{ opacity: 0, y: 8 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      exit={{ opacity: 0, y: -8 }}
+                      transition={{ duration: 0.2 }}
+                    >
+                      {activeTab === 'documents'      && <CriticalTimeline documents={displayedRichDocs} onDocClick={(doc) => setSelectedDoc(doc)} />}
+                      {activeTab === 'milestones'     && <div className="space-y-6"><EngagementBar documents={richDocs} /><MilestoneCard documents={richDocs} /></div>}
+                      {activeTab === 'income-expense' && <IncomeExpenseChart documents={richDocs} />}
+                      {activeTab === 'spending'       && <SpendingInsights documents={richDocs} />}
+                      {activeTab === 'tax'            && <TaxSummaryCard documents={richDocs} onDocClick={(doc) => setSelectedDoc(doc)} initialYear={taxJumpDate?.year} initialMonth={taxJumpDate?.month} />}
+                      {activeTab === 'reconciliation' && <BankReconciliation documents={richDocs} />}
+                    </motion.div>
+                  </AnimatePresence>
                 </div>
+              )}
+
+              {/* ── Upload drop zone — same width as the table below ── */}
+              {!isSearching && (
+                <CaptureZone onFiles={handleCaptureZoneFiles} isDragActive={isDragActive} lang={lang} />
               )}
 
               {/* Documents section */}
@@ -988,7 +1246,7 @@ export default function Dashboard() {
                         documents={displayedRichDocs}
                         onDocClick={(doc) => setSelectedDoc(doc)}
                         onDeleteDoc={(doc) => handleDelete(doc.id)}
-                        onUpdateDoc={(doc) => handleUpdate(doc)}
+                        onUpdateDoc={handleDocTableUpdate}
                       />
                     </motion.div>
                   </AnimatePresence>

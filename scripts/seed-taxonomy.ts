@@ -1,5 +1,6 @@
 /**
- * Seed document_types table from nayeret_document_taxonomy_full.json
+ * Seed document_types table from nayeret_document_taxonomy_v2_israel_us_global.json
+ * Includes semantic_signals and ui_category for accurate Phase 1 scoring.
  *
  * Prerequisites (run once in Supabase Dashboard → SQL Editor):
  *   supabase/migrations/20260306010000_add_doc_group.sql
@@ -39,11 +40,21 @@ interface ExtractionField {
   required?: boolean;
 }
 
+interface SemanticSignals {
+  keywords_he?: string[];
+  keywords_en?: string[];
+  layout_hints?: string[];
+  vendor_examples?: string[];
+  ocr_patterns?: string[];
+}
+
 interface TaxonomyDoc {
   taxonomy: string;
   classification: string;
   group: string;
+  ui_category?: string;
   matching_description: string;
+  semantic_signals?: SemanticSignals;
   extraction_schema: Record<string, ExtractionField>;
 }
 
@@ -53,15 +64,6 @@ interface TaxonomyFile {
 }
 
 // ── Config ────────────────────────────────────────────────────────────────────
-
-const PRIORITY_GROUPS = new Set([
-  'Identification',
-  'Bills',
-  'Finance',
-  'Travel',
-  'Insurance',
-  'Subscriptions',
-]);
 
 const BATCH_SIZE = 20;
 
@@ -78,24 +80,25 @@ async function main(): Promise<void> {
 
   const supabase = createClient(url, key);
 
-  // Read and parse taxonomy JSON
-  const jsonPath = resolve(process.cwd(), 'nayeret_document_taxonomy_full.json');
+  // Read and parse taxonomy JSON (v2 — includes semantic_signals and ui_category)
+  const jsonPath = resolve(process.cwd(), 'nayeret_document_taxonomy_v2_israel_us_global.json');
   const { documents }: TaxonomyFile = JSON.parse(readFileSync(jsonPath, 'utf8'));
 
-  const filtered = documents.filter(d => PRIORITY_GROUPS.has(d.group));
-  console.log(`Found ${filtered.length} priority types (from ${documents.length} total)\n`);
+  console.log(`Seeding all ${documents.length} types from v2 taxonomy\n`);
 
-  // Map to DB rows
-  const rows = filtered.map(d => ({
-    name:                d.taxonomy,
-    doc_group:           d.classification,
+  // Map to DB rows — include semantic_signals and ui_category for Phase 1 scoring
+  const rows = documents.map(d => ({
+    name:                 d.taxonomy,
+    doc_group:            d.classification,
     matching_description: d.matching_description,
-    schema_definition:   { extraction_schema: d.extraction_schema },
-    is_active:           true,
-    is_tax_deductible:   false,
+    schema_definition:    { extraction_schema: d.extraction_schema },
+    semantic_signals:     d.semantic_signals ?? null,
+    ui_category:          d.ui_category ?? null,
+    is_active:            true,
+    is_tax_deductible:    false,
   }));
 
-  // Upsert in batches
+  // Upsert in batches — updates existing rows with semantic_signals if they were seeded without
   let done = 0;
   for (let i = 0; i < rows.length; i += BATCH_SIZE) {
     const batch = rows.slice(i, i + BATCH_SIZE);

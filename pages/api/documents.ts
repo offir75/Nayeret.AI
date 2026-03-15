@@ -25,6 +25,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
       return;
     }
+    res.setHeader('Cache-Control', 'no-store');
     res.status(200).json({ documents: data ?? [] })
 
     return;
@@ -79,10 +80,11 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
   // PATCH /api/documents — update user-editable fields on a document
   if (req.method === 'PATCH') {
-    const { id, user_notes, document_type, raw_analysis: rawPatch } = req.body as {
+    const { id, user_notes, document_type, raw_analysis: rawPatch, ui_category } = req.body as {
       id: string;
       user_notes?: string;
       document_type?: string;
+      ui_category?: string;
       raw_analysis?: Record<string, unknown>;
     };
     if (!id) { res.status(400).json({ error: 'Missing document id' }); return; }
@@ -99,6 +101,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     const patch: Record<string, unknown> = {};
     if (user_notes !== undefined) patch.user_notes = user_notes;
     if (document_type !== undefined) patch.document_type = document_type;
+    if (ui_category !== undefined) patch.ui_category = ui_category;
     if (rawPatch !== undefined) {
       patch.raw_analysis = { ...(existing.raw_analysis as Record<string, unknown> ?? {}), ...rawPatch };
       patch.insights = patch.raw_analysis;

@@ -64,7 +64,19 @@ export default async function handler(
       }
     }
 
-    // ── If force=true, delete the old document with the same hash ─────────────────────
+    const ext = filename.split('.').pop()?.toLowerCase() ?? '';
+    const mimeType = MIME_MAP[ext] ?? 'application/octet-stream';
+    const buffer = Buffer.from(file, 'base64');
+
+    // Ensure the documents bucket exists (idempotent)
+    await ensureBucket('documents', false);
+
+    // Upload new file to storage FIRST — so the old doc is only removed after
+    // the new file is safely stored.  If this upload fails the old doc is preserved.
+    const storagePath = `${userId}/${filename}`;
+    await uploadFile('documents', storagePath, buffer, mimeType);
+
+    // ── If force=true, NOW delete the old document (upload already succeeded) ──
     if (fileHash && force) {
       const { data: oldDoc } = await supabaseAdmin
         .from('documents')
@@ -79,17 +91,6 @@ export default async function handler(
         await deleteFile('thumbnails', `${userId}/${oldDoc.id}.jpg`);
       }
     }
-
-    const ext = filename.split('.').pop()?.toLowerCase() ?? '';
-    const mimeType = MIME_MAP[ext] ?? 'application/octet-stream';
-    const buffer = Buffer.from(file, 'base64');
-
-    // Ensure the documents bucket exists (idempotent)
-    await ensureBucket('documents', false);
-
-    // Upload to Supabase Storage: documents/{userId}/{filename}
-    const storagePath = `${userId}/${filename}`;
-    await uploadFile('documents', storagePath, buffer, mimeType);
 
     res.status(200).json({ isDuplicate: false, success: true });
     return;

@@ -22,6 +22,7 @@ export interface UpdateDocumentPayload {
   id: string;
   user_notes?: string;
   document_type?: string;
+  ui_category?: string;
   raw_analysis?: Record<string, unknown>;
   summary_he?: string;
   summary_en?: string;
@@ -70,7 +71,7 @@ export interface AnalyzeApiResponse {
   summary_he: string | null;
   summary_en: string | null;
   document_group: string;
-  document_type: DocumentType;
+  document_type: string;
   raw_metadata: Record<string, unknown> | null;
   supabaseId: string | null;
   is_media?: boolean;

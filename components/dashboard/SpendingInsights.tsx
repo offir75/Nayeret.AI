@@ -7,6 +7,7 @@ import { useLanguage } from '@/lib/context/settings';
 import { motion, AnimatePresence } from 'framer-motion';
 import { usePersistentCollapsed } from '@/hooks/usePersistentCollapsed';
 import { CurrencyAmount } from '@/components/ui/currency-amount';
+import { TO_ILS } from '@/lib/fx';
 
 const formatILSLabel = (value: number, suffix = '') => `\u200E₪\u00A0${value.toLocaleString('en-US')}${suffix}`;
 
@@ -17,8 +18,6 @@ const CATEGORY_COLORS: Record<string, string> = {
   'Insurance & Contracts': 'hsl(280, 50%, 55%)',
   'Trips & Tickets':       'hsl(340, 60%, 55%)',
 };
-
-const TO_ILS: Record<string, number> = { ILS: 1, USD: 3.65, EUR: 3.95, GBP: 4.6 };
 
 interface SpendingInsightsProps {
   documents: RichDoc[];

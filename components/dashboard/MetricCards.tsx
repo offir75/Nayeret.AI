@@ -4,6 +4,7 @@ import type { RichDoc } from '@/lib/vault/docAdapter';
 import { getNumericAmount } from '@/lib/vault/categoryMap';
 import { useLanguage } from '@/lib/context/settings';
 import { CurrencyAmount } from '@/components/ui/currency-amount';
+import { TO_ILS } from '@/lib/fx';
 
 export type MetricFilter = 'assets' | 'upcoming' | 'pending' | 'tax' | 'income' | 'expense' | null;
 
@@ -13,8 +14,6 @@ interface MetricCardsProps {
   onFilterChange: (filter: MetricFilter) => void;
 }
 
-// Rough FX rates for display aggregation (ILS base)
-const TO_ILS: Record<string, number> = { ILS: 1, USD: 3.6, EUR: 3.95, GBP: 4.5 };
 const CURRENCY_SYMBOLS: Record<string, string> = { ILS: '₪', USD: '$', EUR: '€', GBP: '£' };
 
 export function MetricCards({ documents, activeFilter, onFilterChange }: MetricCardsProps) {

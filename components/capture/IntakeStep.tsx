@@ -1,6 +1,6 @@
 import { useRef } from 'react';
 import { motion } from 'framer-motion';
-import { FileText, Files, FolderOpen, ImagePlus } from 'lucide-react';
+import { FileText, Files, FolderOpen, Upload } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import type { CaptureMode } from './CaptureWizard';
 import { useLanguage } from '@/lib/context/settings';
@@ -17,7 +17,7 @@ const item = {
 };
 
 export const IntakeStep = ({ onModeSelect, onGalleryUpload }: IntakeStepProps) => {
-  const { t, isRtl } = useLanguage();
+  const { t, lang, isRtl } = useLanguage();
   const fileRef = useRef<HTMLInputElement>(null);
 
   const modes: { mode: CaptureMode; icon: typeof FileText; title: string; desc: string }[] = [
@@ -48,10 +48,10 @@ export const IntakeStep = ({ onModeSelect, onGalleryUpload }: IntakeStepProps) =
         ))}
       </motion.div>
       <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.3, duration: 0.25 }} className="mt-6 pt-6 border-t border-border/50">
-        <input ref={fileRef} type="file" accept="image/*" multiple className="hidden"
+        <input ref={fileRef} type="file" accept=".jpg,.jpeg,.png,.gif,.webp,.heic,.heif,.tiff,.bmp,.pdf" multiple className="hidden"
           onChange={(e) => e.target.files && onGalleryUpload(e.target.files)} />
         <Button variant="outline" className="w-full h-14 text-base gap-3" onClick={() => fileRef.current?.click()}>
-          <ImagePlus className="w-5 h-5" />{t('uploadFromGallery')}
+          <Upload className="w-5 h-5" />{lang === 'en' ? 'Upload File' : 'העלה קובץ'}
         </Button>
       </motion.div>
     </div>

@@ -1,5 +1,4 @@
 import { GoogleGenerativeAI } from '@google/generative-ai';
-import type { DocumentType } from '@/lib/types';
 import { supabaseAdmin } from '@/supabase/client';
 import type { UICategory } from '@/nayeret_ai_schema_registry';
 
@@ -12,17 +11,6 @@ export const MIME_MAP: Record<string, string> = {
 
 export function getExt(filename: string): string {
   return filename.split('.').pop()?.toLowerCase() ?? '';
-}
-
-export function toDocumentType(group: string): DocumentType {
-  const g = group.trim().toLowerCase();
-  if (g === 'bills') return 'bill';
-  if (g === 'financial reports') return 'financial_report';
-  if (g === 'receipts') return 'receipt';
-  if (g === 'tax/insurance claims' || g === 'claims') return 'claim';
-  if (g === 'insurances' || g === 'insurance') return 'insurance';
-  if (g === 'identification') return 'identification';
-  return 'other';
 }
 
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || '');
@@ -575,44 +563,5 @@ export async function discoverDocumentType(text: string): Promise<DiscoveredType
     return parsed;
   } catch {
     return null;
-  }
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-
-export async function extractMetadata(documentType: DocumentType, text: string): Promise<Record<string, unknown>> {
-  try {
-    let prompt: string;
-    switch (documentType) {
-    case 'financial_report':
-      prompt = `Extract the following fields as a JSON object:\n- total_balance: the grand total amount for the entire period (the overall sum charged or paid — NOT remaining installments or future payments)\n- liquidity_date: the report or statement date (YYYY-MM-DD)\n- management_fee: any management fee mentioned (null if none)\n- employer_name: the service provider, institution, or employer name\n\nDocument:\n${text.slice(0, 6000)}`;
-      break;
-    case 'bill':
-      prompt = `Extract the following fields as a JSON object:\nprovider, total_amount, currency, due_date (YYYY-MM-DD), is_automatic_payment (true/false)\n\nDocument:\n${text.slice(0, 6000)}`;
-      break;
-    case 'receipt':
-      prompt = `Extract the following fields as a JSON object:\nmerchant, total_amount, currency, purchase_date (YYYY-MM-DD)\n\nDocument:\n${text.slice(0, 6000)}`;
-      break;
-    case 'claim':
-      prompt = `Extract the following fields as a JSON object:\nclaim_type, policy_number, insurer, total_amount, currency, claim_date (YYYY-MM-DD), status\n\nDocument:\n${text.slice(0, 6000)}`;
-      break;
-    case 'insurance':
-      prompt = `Extract the following fields as a JSON object:\ninsurer, policy_number, premium_amount, currency, coverage_type, expiry_date (YYYY-MM-DD)\n\nDocument:\n${text.slice(0, 6000)}`;
-      break;
-    case 'identification':
-      prompt = `Extract the following fields as a JSON object:\nid_type, full_name, id_number, issue_date (YYYY-MM-DD), expiry_date (YYYY-MM-DD), issuing_authority\n\nDocument:\n${text.slice(0, 6000)}`;
-      break;
-      default:
-        prompt = `Extract any relevant metadata fields as a JSON object.\n\nDocument:\n${text.slice(0, 6000)}`;
-    }
-    const raw = await callGemini(prompt, true);
-    try {
-      return JSON.parse(raw);
-    } catch {
-      return { raw };
-    }
-  } catch (err) {
-    console.warn('[extractMetadata] Extraction failed:', String(err));
-    return {};
   }
 }

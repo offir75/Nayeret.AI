@@ -2,7 +2,7 @@ import { cn } from '@/lib/utils';
 import { useSettings } from '@/lib/context/settings';
 
 const CURRENCY_SYMBOLS: Record<string, string> = {
-  ILS: '₪', USD: '$', EUR: '€', GBP: '£', JPY: '¥', CAD: 'CA$', AUD: 'A$',
+  ILS: '₪', NIS: '₪', USD: '$', EUR: '€', GBP: '£', JPY: '¥', CAD: 'CA$', AUD: 'A$',
 };
 
 interface CurrencyAmountProps {
@@ -27,7 +27,7 @@ export function CurrencyAmount({
 
   const symbol = CURRENCY_SYMBOLS[currency] || currency;
   const formattedValue = typeof value === 'number' ? value.toLocaleString('en-US') : value;
-  const isILS = currency === 'ILS';
+  const isILS = currency === 'ILS' || currency === 'NIS';
 
   const blurCls = privacyMode
     ? 'blur-sm hover:blur-none transition-[filter] duration-200 cursor-pointer select-none'

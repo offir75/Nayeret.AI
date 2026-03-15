@@ -62,7 +62,7 @@ export async function analyzeFileApi(filename: string, mimeType: string, accessT
 
 export async function updateDocument(
   id: string,
-  patch: { user_notes?: string; document_type?: string; raw_analysis?: Record<string, unknown>; summary_he?: string; summary_en?: string },
+  patch: { user_notes?: string; document_type?: string; ui_category?: string; raw_analysis?: Record<string, unknown>; summary_he?: string; summary_en?: string },
   accessToken: string,
 ): Promise<import('@/lib/types').VaultDoc> {
   const res = await apiFetch('/api/documents', {
