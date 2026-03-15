@@ -34,14 +34,27 @@ export default async function handler(
       force?: boolean;
     };
 
-    if (!file || !filename) {
-      res.status(400).json({ error: 'Missing file or filename' });
+    if (typeof file !== 'string' || !file) {
+      res.status(400).json({ error: 'Missing or invalid file data' });
       return;
     }
+    if (typeof filename !== 'string' || !filename.trim()) {
+      res.status(400).json({ error: 'Missing or invalid filename' });
+      return;
+    }
+    if (filename.length > 500) {
+      res.status(400).json({ error: 'Filename too long' });
+      return;
+    }
+    if (fileHash !== undefined && typeof fileHash !== 'string') {
+      res.status(400).json({ error: 'Invalid fileHash' });
+      return;
+    }
+    const forceFlag = force === true;
 
     // ── Tier 1: Byte-level duplicate check ──────────────────────────────────────────
     if (!fileHash) console.warn('[dedup] No fileHash provided for:', filename);
-    if (fileHash && !force) {
+    if (fileHash && !forceFlag) {
       const { data: existing } = await supabaseAdmin
         .from('documents')
         .select('id, file_name, document_type, thumbnail_url')
@@ -50,7 +63,7 @@ export default async function handler(
         .maybeSingle();
 
       if (existing) {
-        console.log('[dedup] Duplicate detected for hash:', fileHash, '| owner:', userId, '| existing doc id:', existing.id, '| file:', existing.file_name);
+        console.log('[dedup] Duplicate detected | existing doc id:', existing.id, '| file:', existing.file_name);
         res.status(200).json({
           isDuplicate: true,
           existingDoc: {
@@ -77,7 +90,7 @@ export default async function handler(
     await uploadFile('documents', storagePath, buffer, mimeType);
 
     // ── If force=true, NOW delete the old document (upload already succeeded) ──
-    if (fileHash && force) {
+    if (fileHash && forceFlag) {
       const { data: oldDoc } = await supabaseAdmin
         .from('documents')
         .select('id, file_name, owner_id')

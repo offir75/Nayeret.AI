@@ -1,5 +1,5 @@
 import Head from 'next/head';
-import { Settings, Camera, Upload, Loader2, CheckCircle2, ScanLine, X, Eye, EyeOff, ChevronDown, MoreVertical, RotateCcw, LogOut, Lock } from 'lucide-react';
+import { Settings, Loader2, ScanLine, X, Eye, EyeOff, MoreVertical, RotateCcw, LogOut } from 'lucide-react';
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useRouter } from 'next/router';
 import { useDropzone } from 'react-dropzone';
@@ -40,6 +40,8 @@ import { GlobalSearch } from '@/components/dashboard/GlobalSearch';
 import { DocumentTable } from '@/components/dashboard/DocumentTable';
 import { FilterEmptyState } from '@/components/dashboard/FilterEmptyState';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import { ErrorBoundary } from '@/components/ui/ErrorBoundary';
+import { WorkspaceSwitcher } from '@/components/workspace/WorkspaceSwitcher';
 
 // Chart components use recharts (ESM) — must be dynamically imported to avoid SSR issues
 const SpendingInsights = dynamic(
@@ -59,6 +61,8 @@ const BankReconciliation = dynamic(
   { ssr: false },
 );
 
+import { CaptureZone } from '@/components/dashboard/CaptureZone';
+
 // ── Spinner ──────────────────────────────────────────────────────────────────
 
 function Spinner({ size = 'sm' }: { size?: 'sm' | 'lg' }) {
@@ -66,376 +70,6 @@ function Spinner({ size = 'sm' }: { size?: 'sm' | 'lg' }) {
     <div className="w-8 h-8 border-4 border-zen-sage/30 border-t-zen-sage rounded-full animate-spin" />
   ) : (
     <span className="inline-block w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin" />
-  );
-}
-
-// ── PrivateValue ─────────────────────────────────────────────────────────────
-
-function PrivateValue({ value }: { value: string }) {
-  const { privacyMode } = useSettings();
-  if (!privacyMode) return <>{value}</>;
-  return (
-    <span className="blur-sm hover:blur-none transition-[filter] duration-200 cursor-pointer select-none" title="Hover to reveal">
-      {value}
-    </span>
-  );
-}
-
-// ── Toggle ───────────────────────────────────────────────────────────────────
-
-function Toggle({ checked, onChange, label }: { checked: boolean; onChange: (v: boolean) => void; label: string }) {
-  return (
-    <label className="flex items-center justify-between cursor-pointer gap-3">
-      <span className="text-sm text-foreground">{label}</span>
-      <button
-        role="switch"
-        aria-checked={checked}
-        onClick={() => onChange(!checked)}
-        className={`relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors ${checked ? 'bg-zen-sage' : 'bg-secondary'}`}
-      >
-        <span className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform ${checked ? 'translate-x-6' : 'translate-x-1'}`} />
-      </button>
-    </label>
-  );
-}
-
-// ── Settings Panel ────────────────────────────────────────────────────────────
-
-function SettingsPanel({ isOpen, onClose, user, onLogout }: {
-  isOpen: boolean; onClose: () => void; user: User | null; onLogout: () => void;
-}) {
-  const { lang, setLang, privacyMode, setPrivacyMode, alertDays, setAlertDays, currency, setCurrency } = useSettings();
-  const [avatarError, setAvatarError] = useState(false);
-
-  if (!isOpen) return null;
-
-  const displayName = user?.user_metadata?.full_name ?? user?.email ?? 'User';
-  const avatarUrl = user?.user_metadata?.avatar_url as string | undefined;
-  const initials = displayName[0].toUpperCase();
-
-  return (
-    <>
-      <div className="fixed inset-0 bg-zen-stone/30 z-40" onClick={onClose} />
-      <div className="fixed top-0 right-0 h-full w-80 bg-card shadow-xl z-50 flex flex-col" dir={lang === 'he' ? 'rtl' : 'ltr'}>
-        <div className="flex items-center justify-between px-5 py-4 border-b border-border">
-          <h2 className="text-base font-semibold text-foreground flex items-center gap-2">
-            <Settings className="w-4 h-4" />
-            {translations.settings[lang]}
-          </h2>
-          <button onClick={onClose} className="text-muted-foreground hover:text-foreground transition-colors text-xl leading-none" aria-label="Close">✕</button>
-        </div>
-
-        <div className="flex-1 overflow-y-auto px-5 py-5 space-y-8">
-          <section>
-            <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-3">{translations.profile[lang]}</h3>
-            <div className="flex items-center gap-3 mb-4">
-              {avatarUrl && !avatarError ? (
-                <img src={avatarUrl} alt="avatar" className="w-10 h-10 rounded-full object-cover flex-shrink-0" onError={() => setAvatarError(true)} />
-              ) : (
-                <div className="w-10 h-10 rounded-full bg-zen-sage/20 flex items-center justify-center text-zen-stone font-bold text-sm flex-shrink-0 select-none">{initials}</div>
-              )}
-              <div className="flex-1 min-w-0">
-                <p className="text-sm font-medium text-foreground truncate">{displayName}</p>
-                {user?.email && <p className="text-xs text-muted-foreground truncate">{user.email}</p>}
-              </div>
-            </div>
-            <button onClick={onLogout} className="w-full border border-destructive/20 rounded-lg px-4 py-2 text-sm text-destructive hover:bg-destructive/5 transition-colors text-start">
-              {translations.logout[lang]}
-            </button>
-          </section>
-
-          <section>
-            <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-3">{translations.dashboardLang[lang]}</h3>
-            <div className="flex gap-2">
-              {(['he', 'en'] as const).map((l) => (
-                <button key={l} onClick={() => setLang(l)}
-                  className={`flex-1 py-2 rounded-xl text-sm font-medium transition-colors border ${lang === l ? 'bg-primary/10 border-primary/40 text-primary' : 'bg-muted/30 border-border/50 text-muted-foreground hover:bg-muted/50'}`}>
-                  {l === 'he' ? 'עברית' : 'English'}
-                </button>
-              ))}
-            </div>
-            <p className="mt-2 text-xs text-muted-foreground">{translations.dashboardLangDesc[lang]}</p>
-          </section>
-
-          <section>
-            <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-3">{translations.privacy[lang]}</h3>
-            <Toggle checked={privacyMode} onChange={setPrivacyMode} label={translations.blurSensitive[lang]} />
-            <p className="mt-2 text-xs text-muted-foreground">{translations.privacyDesc[lang]}</p>
-          </section>
-
-          <section>
-            <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-3">{translations.alertThreshold[lang]}</h3>
-            <div className="flex items-center gap-3">
-              <input type="range" min={1} max={14} value={alertDays} onChange={(e) => setAlertDays(Number(e.target.value))} className="flex-1 accent-zen-sage" />
-              <span className="text-sm font-semibold text-foreground w-16 text-end">{alertDays} {alertDays === 1 ? translations.day[lang] : translations.days[lang]}</span>
-            </div>
-            <p className="mt-2 text-xs text-muted-foreground">{translations.alertDesc[lang]}</p>
-          </section>
-
-          <section>
-            <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-3">{translations.currency[lang]}</h3>
-            <div className="flex gap-2">
-              {(['ILS', 'USD'] as const).map((c) => (
-                <button key={c} onClick={() => setCurrency(c)}
-                  className={`flex-1 py-2 rounded-xl text-sm font-medium transition-colors border ${currency === c ? 'bg-primary/10 border-primary/40 text-primary' : 'bg-muted/30 border-border/50 text-muted-foreground hover:bg-muted/50'}`}>
-                  {c === 'ILS' ? translations.ils[lang] : translations.usd[lang]}
-                </button>
-              ))}
-            </div>
-            <p className="mt-2 text-xs text-muted-foreground">{translations.currencyDesc[lang]}</p>
-          </section>
-        </div>
-
-        <div className="px-5 py-3 border-t border-border text-center">
-          <p className="text-xs text-muted-foreground">Nayeret.AI · Powered by Gemini + Supabase</p>
-        </div>
-      </div>
-    </>
-  );
-}
-
-// ── CaptureZone ───────────────────────────────────────────────────────────────
-
-function CaptureZone({ onFiles, isDragActive, lang }: {
-  onFiles: (files: File[]) => void;
-  isDragActive: boolean;
-  lang: Lang;
-}) {
-  const cameraRef = useRef<HTMLInputElement>(null);
-  const galleryRef = useRef<HTMLInputElement>(null);
-  const filesRef = useRef<HTMLInputElement>(null);
-  const desktopRef = useRef<HTMLInputElement>(null);
-
-  const accepted = '.jpg,.jpeg,.png,.gif,.webp,.heic,.heif,.tiff,.bmp,.pdf';
-
-  const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = Array.from(e.target.files ?? []);
-    if (files.length) onFiles(files);
-    e.target.value = '';
-  };
-
-  const GalleryIcon = (props: { className?: string }) => (
-    <svg {...props} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
-      <rect width="18" height="18" x="3" y="3" rx="2" ry="2" /><circle cx="9" cy="9" r="2" /><path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21" />
-    </svg>
-  );
-
-  const FolderIcon = (props: { className?: string }) => (
-    <svg {...props} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
-      <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
-    </svg>
-  );
-
-  const mobileActions = [
-    {
-      ref: cameraRef,
-      Icon: Camera,
-      label: lang === 'he' ? 'מצלמה' : 'Camera',
-      sublabel: lang === 'he' ? 'צלם מסמך' : 'Take photo',
-      accept: 'image/*',
-      capture: true,
-      primary: true,
-    },
-    {
-      ref: galleryRef,
-      Icon: GalleryIcon,
-      label: lang === 'he' ? 'גלריה' : 'Gallery',
-      sublabel: lang === 'he' ? 'בחר תמונה' : 'Pick photo',
-      accept: accepted,
-      capture: false,
-      primary: false,
-    },
-    {
-      ref: filesRef,
-      Icon: FolderIcon,
-      label: lang === 'he' ? 'קבצים' : 'Files',
-      sublabel: lang === 'he' ? 'עיון בקבצים' : 'Browse files',
-      accept: accepted,
-      capture: false,
-      primary: false,
-    },
-  ];
-
-  return (
-    <motion.section
-      initial={{ opacity: 0, y: 16 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.5, delay: 0.1 }}
-    >
-
-      {/* Mobile: 3-button grid */}
-      <div className="grid grid-cols-3 gap-3 md:hidden">
-        {mobileActions.map((action) => (
-          <motion.button
-            key={action.label}
-            whileTap={{ scale: 0.95 }}
-            onClick={() => action.ref.current?.click()}
-            className={`flex flex-col items-center gap-2 rounded-2xl border-2 border-dashed p-5 transition-colors ${
-              action.primary
-                ? 'border-zen-sage bg-zen-sage/5 text-zen-sage'
-                : 'border-border bg-card text-muted-foreground hover:border-zen-sage/40 hover:text-foreground'
-            }`}
-          >
-            <action.Icon className="h-7 w-7" />
-            <div className="text-center">
-              <p className="text-sm font-semibold">{action.label}</p>
-              <p className="text-[10px] text-muted-foreground">{action.sublabel}</p>
-            </div>
-          </motion.button>
-        ))}
-      </div>
-
-      {/* Desktop: drag-drop zone */}
-      <motion.div
-        whileHover={{ borderColor: '#7a8c6e' }}
-        onClick={() => desktopRef.current?.click()}
-        className={`hidden md:flex cursor-pointer flex-col items-center justify-center gap-4 rounded-2xl border-2 border-dashed p-10 transition-all ${
-          isDragActive
-            ? 'border-zen-sage bg-zen-sage/5'
-            : 'border-border bg-card hover:bg-secondary/50'
-        }`}
-      >
-        <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-zen-sage/10">
-          <Upload className="h-6 w-6 text-zen-sage" />
-        </div>
-        <div className="text-center">
-          <p className="text-base font-semibold text-foreground">
-            {lang === 'he' ? 'גרור קבצים לכאן או לחץ להעלאה' : 'Drop files here or click to upload'}
-          </p>
-          <p className="mt-1 text-sm text-muted-foreground">
-            {lang === 'he' ? 'PDF, תמונות, מסמכים סרוקים' : 'PDF, images, scanned documents'}
-          </p>
-        </div>
-      </motion.div>
-
-      {/* Hidden inputs */}
-      <input ref={cameraRef}  type="file" accept="image/*" capture="environment" onChange={handleChange} className="hidden" />
-      <input ref={galleryRef} type="file" accept={accepted} multiple onChange={handleChange} className="hidden" />
-      <input ref={filesRef}   type="file" accept={accepted} multiple onChange={handleChange} className="hidden" />
-      <input ref={desktopRef} type="file" accept={accepted} multiple onChange={handleChange} className="hidden" />
-    </motion.section>
-  );
-}
-
-// ── EmptyVault ────────────────────────────────────────────────────────────────
-
-function EmptyVault({ lang, onSuggestedSearch }: { lang: Lang; onSuggestedSearch: (term: string) => void }) {
-  const suggested = ['ארנונה', 'דרכון', 'ביטוח רכב', 'חשבון חשמל', 'חוזה שכירות'];
-  return (
-    <motion.div
-      initial={{ opacity: 0, y: 20 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.6, delay: 0.2 }}
-      className="flex flex-col items-center px-4 pb-32 pt-8 md:px-8"
-    >
-      <div className="relative mb-8 flex h-40 w-40 items-center justify-center">
-        {[0, 1, 2].map(i => (
-          <motion.div
-            key={i}
-            initial={{ opacity: 0, scale: 0.6 }}
-            animate={{ opacity: 0.15 - i * 0.04, scale: 1 }}
-            transition={{ duration: 1.2, delay: 0.4 + i * 0.2 }}
-            className="absolute rounded-full border border-zen-sage/30"
-            style={{ width: `${80 + i * 40}px`, height: `${80 + i * 40}px` }}
-          />
-        ))}
-        <motion.div
-          initial={{ opacity: 0, scale: 0 }}
-          animate={{ opacity: 1, scale: 1 }}
-          transition={{ type: 'spring', stiffness: 200, damping: 20, delay: 0.3 }}
-          className="relative z-10 flex h-20 w-20 items-center justify-center rounded-full bg-zen-sage/10"
-        >
-          <svg width="36" height="36" viewBox="0 0 24 24" fill="none" className="text-zen-sage">
-            <path d="M12 2C6.5 2 2 6.5 2 12c0 5 4 9.5 10 10-.5-1-1-2.5-1-4.5 0-3 2-5.5 2-8.5 0-2-1-4-1-7z" fill="currentColor" opacity="0.15" />
-            <path d="M12 2c0 3 1 5 1 7 0 3-2 5.5-2 8.5 0 2 .5 3.5 1 4.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
-            <path d="M12 2C17.5 2 22 6.5 22 12c0 5-4 9.5-10 10" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" opacity="0.5" />
-            <path d="M12 2C6.5 2 2 6.5 2 12c0 5 4 9.5 10 10" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" opacity="0.5" />
-            <path d="M12 8c2 1 4 2.5 5 4.5" stroke="currentColor" strokeWidth="1" strokeLinecap="round" opacity="0.3" />
-            <path d="M12 8c-2 1-4 2.5-5 4.5" stroke="currentColor" strokeWidth="1" strokeLinecap="round" opacity="0.3" />
-          </svg>
-        </motion.div>
-      </div>
-
-      <motion.h2
-        initial={{ opacity: 0 }}
-        animate={{ opacity: 1 }}
-        transition={{ duration: 0.6, delay: 0.5 }}
-        className="mb-2 text-center text-base font-bold text-foreground"
-      >
-        {lang === 'he' ? 'הכספת שלך מוכנה' : 'Your vault is ready'}
-      </motion.h2>
-      <motion.p
-        initial={{ opacity: 0 }}
-        animate={{ opacity: 1 }}
-        transition={{ duration: 0.6, delay: 0.6 }}
-        className="mb-8 max-w-xs text-center text-sm leading-relaxed text-muted-foreground"
-      >
-        {lang === 'he' ? 'העלה את המסמך הראשון שלך למעלה כדי להתחיל.' : 'Upload your first document above to get started.'}
-      </motion.p>
-
-      <motion.div
-        initial={{ opacity: 0, y: 10 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.5, delay: 0.8 }}
-        className="w-full max-w-sm"
-      >
-        <p className="mb-3 text-center text-xs font-semibold text-muted-foreground/70">
-          {lang === 'he' ? 'חיפושים מומלצים' : 'Suggested searches'}
-        </p>
-        <div className="flex flex-wrap justify-center gap-2">
-          {suggested.map((term, i) => (
-            <motion.button
-              key={term}
-              initial={{ opacity: 0, scale: 0.8 }}
-              animate={{ opacity: 1, scale: 1 }}
-              transition={{ duration: 0.3, delay: 0.9 + i * 0.07 }}
-              whileHover={{ scale: 1.05 }}
-              whileTap={{ scale: 0.95 }}
-              onClick={() => onSuggestedSearch(term)}
-              className="rounded-full bg-card px-4 py-2 text-xs font-medium text-foreground shadow-sm ring-1 ring-border/60 transition-colors hover:bg-secondary hover:ring-zen-sage/30"
-            >
-              {term}
-            </motion.button>
-          ))}
-        </div>
-      </motion.div>
-    </motion.div>
-  );
-}
-
-// ── EmptySearch ───────────────────────────────────────────────────────────────
-
-function EmptySearch({ lang }: { lang: Lang }) {
-  return (
-    <div className="flex flex-col items-center justify-center py-16 text-center gap-3">
-      <div className="text-4xl">🔍</div>
-      <p className="text-muted-foreground font-medium">{translations.noMatch[lang]}</p>
-    </div>
-  );
-}
-
-// ── SkeletonCards ─────────────────────────────────────────────────────────────
-
-function SkeletonCards() {
-  return (
-    <div className="px-4 pt-4 pb-28 space-y-3 md:px-8">
-      {[0, 1, 2].map(i => (
-        <motion.div
-          key={i}
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          transition={{ duration: 0.3, delay: i * 0.1 }}
-          className="flex gap-3 rounded-xl bg-card p-4 ring-1 ring-border/60"
-        >
-          <div className="h-11 w-11 shrink-0 animate-pulse rounded-xl bg-muted" />
-          <div className="flex-1 space-y-2.5">
-            <div className="h-3.5 w-3/4 animate-pulse rounded-md bg-muted" />
-            <div className="h-3 w-full animate-pulse rounded-md bg-muted/70" />
-            <div className="h-2.5 w-1/3 animate-pulse rounded-md bg-muted/50" />
-          </div>
-        </motion.div>
-      ))}
-    </div>
   );
 }
 
@@ -537,6 +171,8 @@ export default function Dashboard() {
     if (router.query.docAdded !== '1') return;
     const targetId = typeof router.query.openDoc === 'string' ? router.query.openDoc : null;
     void router.replace('/');
+    // Store targetId immediately so retry effect can open it once docs/session are ready
+    if (targetId) setOpenDocId(targetId);
     if (!session) return;
     const token = session.access_token;
     // Uploads are complete before /capture redirects here, so a short delay is enough
@@ -545,8 +181,8 @@ export default function Dashboard() {
         setDocs(docs);
         if (targetId) {
           const match = enrichDocs(docs).find(d => d.id === targetId);
-          if (match) setSelectedDoc(match);
-          else setOpenDocId(targetId); // doc not in list yet, retry after load
+          if (match) { setSelectedDoc(match); setOpenDocId(null); }
+          // else: openDocId stays set → retry effect fires when richDocs updates
         }
       }).catch(() => {});
     }, 1500);
@@ -993,31 +629,23 @@ export default function Dashboard() {
           <div className="max-w-7xl mx-auto px-3 sm:px-6 py-2.5 sm:py-3 flex items-center justify-between gap-2 sm:gap-3">
             {/* ── Left: user identity pill (WorkspaceSwitcher-style) + desktop search ── */}
             <div className="flex items-center gap-2 sm:gap-3 min-w-0 flex-1">
-              <button
-                onClick={() => setSettingsOpen(true)}
-                className="flex items-center gap-2 px-2.5 sm:px-3 py-2 rounded-xl bg-muted/50 hover:bg-muted transition-colors cursor-pointer group min-w-0 max-w-[200px] sm:max-w-none shrink-0"
-              >
-                <div className="w-8 h-8 rounded-full bg-zen-sage/20 flex items-center justify-center text-xs font-semibold text-zen-stone overflow-hidden shrink-0">
-                  {user.user_metadata?.avatar_url && !headerAvatarError ? (
-                    <img
-                      src={user.user_metadata.avatar_url as string}
-                      alt="avatar"
-                      className="w-full h-full object-cover"
-                      onError={() => setHeaderAvatarError(true)}
-                    />
-                  ) : initials}
-                </div>
-                <div className="text-start min-w-0">
-                  <p className="text-sm font-semibold text-foreground leading-tight truncate">
-                    {(user.user_metadata?.full_name as string | undefined) ?? user.email?.split('@')[0] ?? 'Nayeret.AI'}
-                  </p>
-                  <p className="text-[10px] text-muted-foreground flex items-center gap-1">
-                    <Lock className="w-3 h-3 shrink-0" />
-                    {lang === 'he' ? 'אישי' : 'Personal'}
-                  </p>
-                </div>
-                <ChevronDown className="w-3.5 h-3.5 text-muted-foreground group-hover:text-foreground transition-colors ms-1 shrink-0" />
-              </button>
+              <WorkspaceSwitcher
+                lang={lang}
+                userName={(user.user_metadata?.full_name as string | undefined) ?? user.email?.split('@')[0] ?? 'Nayeret.AI'}
+                userEmail={user.email ?? ''}
+                avatarNode={
+                  <div className="w-8 h-8 rounded-full bg-zen-sage/20 flex items-center justify-center text-xs font-semibold text-zen-stone overflow-hidden">
+                    {user.user_metadata?.avatar_url && !headerAvatarError ? (
+                      <img
+                        src={user.user_metadata.avatar_url as string}
+                        alt="avatar"
+                        className="w-full h-full object-cover"
+                        onError={() => setHeaderAvatarError(true)}
+                      />
+                    ) : initials}
+                  </div>
+                }
+              />
               <div className="hidden sm:block flex-1 max-w-xs">
                 <GlobalSearch value={search} onChange={setSearch} />
               </div>
@@ -1134,10 +762,12 @@ export default function Dashboard() {
         {/* ── Main content ── */}
         <main className="max-w-7xl mx-auto px-4 sm:px-6 py-6 space-y-6">
 
-          <IngestionHub queue={uploadQueue} lang={lang} onCancel={id => {
-            cancelledIds.current.add(id);
-            setUploadQueue(prev => prev.map(j => j.id === id ? { ...j, status: 'cancelled' } : j));
-          }} />
+          <ErrorBoundary>
+            <IngestionHub queue={uploadQueue} lang={lang} onCancel={id => {
+              cancelledIds.current.add(id);
+              setUploadQueue(prev => prev.map(j => j.id === id ? { ...j, status: 'cancelled' } : j));
+            }} />
+          </ErrorBoundary>
 
           {/* MetricCards — 4-column stat grid */}
           {!loadingLibrary && docs.length > 0 && (
@@ -1242,12 +872,14 @@ export default function Dashboard() {
                       exit={{ opacity: 0, y: -6 }}
                       transition={{ duration: 0.2 }}
                     >
-                      <DocumentTable
-                        documents={displayedRichDocs}
-                        onDocClick={(doc) => setSelectedDoc(doc)}
-                        onDeleteDoc={(doc) => handleDelete(doc.id)}
-                        onUpdateDoc={handleDocTableUpdate}
-                      />
+                      <ErrorBoundary>
+                        <DocumentTable
+                          documents={displayedRichDocs}
+                          onDocClick={(doc) => setSelectedDoc(doc)}
+                          onDeleteDoc={(doc) => handleDelete(doc.id)}
+                          onUpdateDoc={handleDocTableUpdate}
+                        />
+                      </ErrorBoundary>
                     </motion.div>
                   </AnimatePresence>
                 )}

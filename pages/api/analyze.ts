@@ -10,134 +10,39 @@ import {
 } from '@/lib/services/ai';
 import type { DocumentTypeRow } from '@/lib/services/ai';
 import type { UICategory } from '@/nayeret_ai_schema_registry';
+import { parseBilingualJson, CURRENCY_SYMBOL_MAP } from '@/lib/utils/parse';
+import { validateEnv } from '@/lib/config/env';
+import { TtlCache } from '@/lib/utils/cache';
+import {
+  REMINDER_OFFSETS_DAYS as CONFIG_REMINDER_OFFSETS_DAYS,
+  CLASSIFIER_TOP_N,
+  AMOUNT_PRIORITY_FIELDS,
+  AMOUNT_KEYWORDS as CONFIG_AMOUNT_KEYWORDS,
+  TEXT_SLICE,
+} from '@/lib/config/pipeline';
 
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const pdfParse = require('pdf-parse/lib/pdf-parse.js');
 
-const REMINDER_OFFSETS_DAYS = [30, 14, 7] as const;
+// Cache document types for 5 minutes to avoid a DB round-trip on every analysis request.
+const documentTypesCache = new TtlCache<DocumentTypeRow[]>(5 * 60 * 1000);
 
-function toNonEmptyString(value: unknown): string | null {
-  if (typeof value !== 'string') return null;
-  const trimmed = value.trim();
-  return trimmed.length > 0 ? trimmed : null;
-}
+const REMINDER_OFFSETS_DAYS = CONFIG_REMINDER_OFFSETS_DAYS;
 
-function toNumeric(value: unknown): number | null {
-  if (typeof value === 'number' && Number.isFinite(value)) return value;
-  if (typeof value !== 'string') return null;
-  const parsed = parseFloat(value.replace(/[^0-9.-]/g, ''));
-  return Number.isFinite(parsed) ? parsed : null;
-}
-
-function toScalarString(value: unknown): string | null {
-  if (typeof value === 'string') {
-    const trimmed = value.trim();
-    return trimmed.length > 0 ? trimmed : null;
-  }
-  if (typeof value === 'number' || typeof value === 'boolean') {
-    return String(value);
-  }
-  return null;
-}
-
-function toIsoDate(value: unknown): string | null {
-  if (value instanceof Date && !Number.isNaN(value.getTime())) {
-    return value.toISOString().slice(0, 10);
-  }
-  if (typeof value === 'number' && Number.isFinite(value)) {
-    const fromEpoch = new Date(value);
-    if (!Number.isNaN(fromEpoch.getTime())) return fromEpoch.toISOString().slice(0, 10);
-  }
-
-  const raw = toScalarString(value);
-  if (!raw) return null;
-
-  // Prefer already-normalized ISO dates from extraction prompts.
-  if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) return raw;
-
-  const parsed = new Date(raw);
-  if (Number.isNaN(parsed.getTime())) return null;
-
-  const year = parsed.getUTCFullYear();
-  const month = String(parsed.getUTCMonth() + 1).padStart(2, '0');
-  const day = String(parsed.getUTCDate()).padStart(2, '0');
-  return `${year}-${month}-${day}`;
-}
-
-function normalizeCurrency(value: unknown): string | null {
-  const curr = toScalarString(value);
-  if (!curr) return null;
-  const upper = curr.toUpperCase().trim().replace(/\./g, '');
-  if (/^[A-Z]{3}$/.test(upper)) return upper; // already an ISO code
-  if (['$', 'US$', 'DOLLAR', 'DOLLARS', 'USD$'].includes(upper)) return 'USD';
-  if (['€', 'EURO', 'EUROS'].includes(upper)) return 'EUR';
-  if (['₪', 'NIS', 'SHEKEL', 'SHEKELS', 'NEW SHEKEL', 'NEW SHEKELS'].includes(upper)) return 'ILS';
-  if (['£', 'POUND', 'POUNDS', 'STERLING', 'GB£'].includes(upper)) return 'GBP';
-  return null;
-}
-
-/**
- * Infer ui_category from the matched taxonomy name when the DB row has no ui_category set.
- */
-function inferUiCategory(typeName: string): UICategory {
-  if (/hotel|resort|flight|travel|reservation|ticket|cruise|train|bus|ferry|boarding|rental|vacation/i.test(typeName))
-    return 'Trips & Tickets';
-  if (/insurance|policy|claim/i.test(typeName)) return 'Insurance & Contracts';
-  if (/passport|national.id|driver.licen|identity/i.test(typeName)) return 'Identity';
-  if (/receipt|purchase|order|retail|supermarket|restaurant|pharmacy/i.test(typeName))
-    return 'Bills & Receipts';
-  if (/bill|invoice|utility|telecom|cable|electricity|water|gas|toll|fine|penalty/i.test(typeName))
-    return 'Bills & Receipts';
-  if (/pension|investment|savings|provident|fund|stock|dividend|loan|mortgage|bank/i.test(typeName))
-    return 'Money';
-  return 'Money';
-}
-
-function normalizeUiCategory(value: unknown, fallback: UICategory): UICategory {
-  if (typeof value !== 'string') return fallback;
-  return (UI_CATEGORIES as readonly string[]).includes(value) ? (value as UICategory) : fallback;
-}
-
-function computeLifecycleDates(sourceDateIso: string | null): {
-  hasEventDate: boolean;
-  eventDate: string | null;
-  nextReminderDate: string | null;
-} {
-  if (!sourceDateIso) {
-    return { hasEventDate: false, eventDate: null, nextReminderDate: null };
-  }
-
-  const eventDate = new Date(`${sourceDateIso}T00:00:00Z`);
-  if (Number.isNaN(eventDate.getTime())) {
-    return { hasEventDate: false, eventDate: null, nextReminderDate: null };
-  }
-
-  const today = new Date();
-  const todayUtc = new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), today.getUTCDate()));
-
-  const reminderCandidates = REMINDER_OFFSETS_DAYS
-    .map((days) => {
-      const reminder = new Date(eventDate);
-      reminder.setUTCDate(reminder.getUTCDate() - days);
-      return reminder;
-    })
-    .filter((reminder) => reminder.getTime() >= todayUtc.getTime())
-    .sort((a, b) => a.getTime() - b.getTime());
-
-  const nextReminderDate = reminderCandidates.length > 0
-    ? reminderCandidates[0].toISOString().slice(0, 10)
-    : null;
-
-  return {
-    hasEventDate: true,
-    eventDate: sourceDateIso,
-    nextReminderDate,
-  };
-}
+import {
+  toNonEmptyString, toNumeric, toIsoDate, normalizeCurrency,
+  inferUiCategory, normalizeUiCategory, computeLifecycleDates,
+} from '@/lib/utils/normalization';
 
 // ── Handler ───────────────────────────────────────────────────────────────────
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
+  try { validateEnv(); } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Server misconfiguration' });
+    return;
+  }
+
   if (req.method !== 'POST') {
     res.status(405).json({ error: 'Method not allowed' })
 
@@ -277,13 +182,7 @@ Text:
 ${text.slice(0, 1000)}`,
         true
       );
-      let mediaSummaries: { he: string; en: string };
-      try {
-        mediaSummaries = JSON.parse(onelinerRaw);
-        if (!mediaSummaries.he || !mediaSummaries.en) throw new Error('Missing keys');
-      } catch {
-        mediaSummaries = { he: '', en: onelinerRaw };
-      }
+      const mediaSummaries = parseBilingualJson(onelinerRaw);
       const { data: mediaData } = await supabaseAdmin
         .from('documents')
         .upsert([{
@@ -308,16 +207,20 @@ ${text.slice(0, 1000)}`,
       return;
     }
 
-    // 4. Fetch active document types from DB (Phase 1 input)
-    const { data: dbTypes, error: typesError } = await supabaseAdmin
-      .from('document_types')
-      .select('name, matching_description, display_name_he, ui_category, schema_definition, semantic_signals')
-      .eq('is_active', true);
+    // 4. Fetch active document types from DB (Phase 1 input), with 5-minute TTL cache
+    let activeTypes: DocumentTypeRow[] = documentTypesCache.get() ?? [];
+    if (activeTypes.length === 0) {
+      const { data: dbTypes, error: typesError } = await supabaseAdmin
+        .from('document_types')
+        .select('name, matching_description, display_name_he, ui_category, schema_definition, semantic_signals')
+        .eq('is_active', true);
 
-    if (typesError) {
-      console.error('Failed to fetch document_types:', typesError.message);
+      if (typesError) {
+        console.error('Failed to fetch document_types:', typesError.message);
+      }
+      activeTypes = (dbTypes ?? []) as DocumentTypeRow[];
+      if (activeTypes.length > 0) documentTypesCache.set(activeTypes);
     }
-    const activeTypes: DocumentTypeRow[] = (dbTypes ?? []) as DocumentTypeRow[];
 
     // 5. PHASE 1 — Hybrid Classifier: score first, Gemini only when needed
     let matchedTypeName = 'Other';
@@ -335,10 +238,9 @@ ${text.slice(0, 1000)}`,
         console.log(`[classify] Scorer won: ${matchedTypeName} (${scorerResult.confidence.toFixed(2)})`);
       } else {
         // Medium / low / unclassified: narrow to top-15 candidates and let Gemini decide
-        const TOP_N = 15;
         const topCandidates = Object.entries(scorerResult.scores)
           .sort(([, a], [, b]) => b - a)
-          .slice(0, TOP_N)
+          .slice(0, CLASSIFIER_TOP_N)
           .map(([name]) => activeTypes.find(t => t.name === name))
           .filter((t): t is DocumentTypeRow => t != null);
 
@@ -391,6 +293,7 @@ ${text.slice(0, 1000)}`,
             matching_description: discovered.matching_description,
             schema_definition: { extraction_schema: discovered.extraction_schema },
           };
+          documentTypesCache.invalidate(); // new type added — force refresh on next request
           console.log('[discover] New document type saved to DB:', discovered.name);
         } else {
           // Insert failed (likely duplicate key) — try to reuse the existing DB row
@@ -431,10 +334,9 @@ ${text.slice(0, 1000)}`,
       const MONETARY_KEYS = ['amount', 'total_amount', 'total', 'total_balance', 'premium_amount'];
       const hasMonetary = MONETARY_KEYS.some(k => insights[k] != null);
       if (hasMonetary) {
-        const SYM_MAP: Record<string, string> = { '$': 'USD', '₪': 'ILS', '€': 'EUR', '£': 'GBP' };
         const codeMatch = text.match(/\b(USD|ILS|EUR|GBP)\b/);
         const symMatch  = text.match(/[₪$€£]/);
-        const inferred  = codeMatch?.[1] ?? (symMatch ? SYM_MAP[symMatch[0]] : undefined);
+        const inferred  = codeMatch?.[1] ?? (symMatch ? CURRENCY_SYMBOL_MAP[symMatch[0]] : undefined);
         if (inferred) insights.currency = inferred;
       }
     }
@@ -442,22 +344,16 @@ ${text.slice(0, 1000)}`,
     // Normalize: guarantee top-level 'amount' (number) and 'currency' keys for dashboard
     // Semantic field mapping: explicit priority list first, then dynamic scan for
     // any field whose name contains total/balance/sum/due (catches aliased field names).
-    const AMOUNT_PRIORITY = [
-      'total_amount', 'total_balance', 'premium_amount',
-      'payment_amount', 'amount_due', 'total_amount_due',
-      'net_amount', 'gross_pay', 'net_pay', 'ending_balance',
-    ];
     if (insights.amount == null) {
       // 1. Named priority
-      for (const k of AMOUNT_PRIORITY) {
+      for (const k of AMOUNT_PRIORITY_FIELDS) {
         if (insights[k] != null) { insights.amount = insights[k]; break; }
       }
       // 2. Semantic scan: any numeric field whose name contains total/balance/sum/due
       if (insights.amount == null) {
-        const AMOUNT_KEYWORDS = ['total', 'balance', 'sum', 'due'];
         for (const [k, v] of Object.entries(insights)) {
           if (k.startsWith('_')) continue;
-          if (typeof v === 'number' && AMOUNT_KEYWORDS.some(kw => k.toLowerCase().includes(kw))) {
+          if (typeof v === 'number' && CONFIG_AMOUNT_KEYWORDS.some(kw => k.toLowerCase().includes(kw))) {
             insights.amount = v;
             break;
           }
@@ -473,10 +369,9 @@ ${text.slice(0, 1000)}`,
     // the earlier currency scan may have run before the amount was promoted.  Run again with
     // a broader pattern that catches "USD20.00" / "20USD" (no strict word boundary needed).
     if (insights.amount != null && !insights.currency) {
-      const SYM_MAP: Record<string, string> = { '$': 'USD', '₪': 'ILS', '€': 'EUR', '£': 'GBP' };
       const codeMatch = text.match(/(USD|ILS|EUR|GBP)/i);
       const symMatch  = text.match(/[₪$€£]/);
-      const inferred  = codeMatch?.[1]?.toUpperCase() ?? (symMatch ? SYM_MAP[symMatch[0]] : undefined);
+      const inferred  = codeMatch?.[1]?.toUpperCase() ?? (symMatch ? CURRENCY_SYMBOL_MAP[symMatch[0]] : undefined);
       if (inferred) {
         insights.currency = inferred;
         console.log('[extract] late currency inference:', inferred);
@@ -511,8 +406,12 @@ ${text.slice(0, 1000)}`,
     const needsAmount   = insights.total_amount == null && insights.amount == null;
     const needsCurrency = !insights.currency;
     if ((needsAmount || needsCurrency) && summaries.en) {
-      const moneyMatch = summaries.en.match(/([\d,]+(?:\.\d+)?)\s*(EUR|USD|ILS|GBP|Euro?s?)/i);
+      // Match both symbol-prefix (₪44.93 / $44.93) and code-suffix (44.93 ILS / 44.93 USD)
+      const moneyMatch =
+        summaries.en.match(/[₪$€£]([\d,]+(?:\.\d+)?)/) ||
+        summaries.en.match(/([\d,]+(?:\.\d+)?)\s*(EUR|USD|ILS|GBP|NIS|Euro?s?)/i);
       if (moneyMatch) {
+        // group 1 = amount for both patterns
         const parsed = parseFloat(moneyMatch[1].replace(/,/g, ''));
         if (!isNaN(parsed) && parsed > 0) {
           if (needsAmount) {
@@ -521,9 +420,16 @@ ${text.slice(0, 1000)}`,
             console.log('[extract] summary-mirror fallback: total_amount =', parsed);
           }
           if (needsCurrency) {
-            const sym = moneyMatch[2].toUpperCase();
-            insights.currency = sym.startsWith('EUR') ? 'EUR' : sym;
-            console.log('[extract] summary-mirror fallback: currency =', insights.currency);
+            // Detect from the matched symbol or code
+            const symChar = summaries.en.match(/[₪$€£]/)?.[0];
+            const codeStr = moneyMatch[2]?.toUpperCase();
+            const inferred = symChar
+              ? ({ '₪': 'ILS', '$': 'USD', '€': 'EUR', '£': 'GBP' }[symChar])
+              : codeStr?.startsWith('EUR') ? 'EUR' : codeStr?.startsWith('NIS') ? 'ILS' : codeStr;
+            if (inferred) {
+              insights.currency = inferred;
+              console.log('[extract] summary-mirror fallback: currency =', insights.currency);
+            }
           }
         }
       }
@@ -533,7 +439,7 @@ ${text.slice(0, 1000)}`,
     const mappedCurrency = normalizeCurrency(insights.currency);
     const mappedDueDate = toIsoDate(insights.due_date);
     const mappedIssueDate = toIsoDate(
-      insights.bill_date ?? insights.issue_date ??
+      insights.bill_date ?? insights.issue_date ?? insights.transaction_date ??
       insights.statement_date ?? insights.request_date ?? insights.service_date
     );
     const mappedProvider = toNonEmptyString(insights.provider_name ?? insights.provider);

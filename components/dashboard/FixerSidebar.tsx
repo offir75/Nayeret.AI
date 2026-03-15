@@ -22,28 +22,10 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { useLanguage } from '@/lib/context/settings';
 import { CurrencyAmount } from '@/components/ui/currency-amount';
 
-// ─── Inline currency symbols ─────────────────────────────────────────────────
+import { useSwipeNavigation } from '@/hooks/useSwipeNavigation';
+import { DocReminderControl } from './DocReminderControl';
 
 const CURRENCY_SYMBOLS: Record<string, string> = { ILS: '₪', USD: '$', EUR: '€', GBP: '£' };
-
-// ─── Hook: swipe navigation ───────────────────────────────────────────────────
-
-function useSwipeNavigation(onPrev: () => void, onNext: () => void, isRtl: boolean) {
-  const touchStart = useRef<{ x: number; y: number } | null>(null);
-  const onTouchStart = useCallback((e: React.TouchEvent) => {
-    touchStart.current = { x: e.touches[0].clientX, y: e.touches[0].clientY };
-  }, []);
-  const onTouchEnd = useCallback((e: React.TouchEvent) => {
-    if (!touchStart.current) return;
-    const dx = e.changedTouches[0].clientX - touchStart.current.x;
-    const dy = e.changedTouches[0].clientY - touchStart.current.y;
-    touchStart.current = null;
-    if (Math.abs(dx) < 50 || Math.abs(dx) < Math.abs(dy)) return;
-    if (dx < 0) { if (isRtl) onPrev(); else onNext(); }
-    else        { if (isRtl) onNext(); else onPrev(); }
-  }, [onPrev, onNext, isRtl]);
-  return { onTouchStart, onTouchEnd };
-}
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -83,81 +65,6 @@ const REMINDER_OPTIONS = [
   { value: '30', labelEn: '1 month before', labelHe: 'חודש לפני'    },
 ];
 
-function DocReminderControl({ docId, hasDueDate, lang }: { docId: string; hasDueDate: boolean; lang: string }) {
-  const [value, setValue] = useState(() => {
-    try { const map = JSON.parse(localStorage.getItem('nayeret_doc_reminders') || '{}'); return map[docId] || '0'; }
-    catch { return '0'; }
-  });
-
-  const handleChange = (v: string) => {
-    setValue(v);
-    try {
-      const map = JSON.parse(localStorage.getItem('nayeret_doc_reminders') || '{}');
-      map[docId] = v;
-      localStorage.setItem('nayeret_doc_reminders', JSON.stringify(map));
-    } catch {}
-    toast.success(v === '0'
-      ? (lang === 'en' ? 'Reminder removed' : 'תזכורת הוסרה')
-      : (lang === 'en' ? 'Reminder set' : 'תזכורת הוגדרה'));
-  };
-
-  if (!hasDueDate) return null;
-  const active = value !== '0';
-
-  return (
-    <div className="space-y-2">
-      <Label className="text-xs text-muted-foreground flex items-center gap-1.5">
-        {active ? <Bell className="w-3 h-3 text-primary" /> : <BellOff className="w-3 h-3" />}
-        {lang === 'en' ? 'Reminder' : 'תזכורת'}
-      </Label>
-      <Select value={value} onValueChange={handleChange}>
-        <SelectTrigger className={`bg-muted/50 border-border text-foreground ${active ? 'border-primary/40' : ''}`}>
-          <SelectValue />
-        </SelectTrigger>
-        <SelectContent className="bg-popover border-border">
-          {REMINDER_OPTIONS.map((opt) => (
-            <SelectItem key={opt.value} value={opt.value}>
-              {lang === 'en' ? opt.labelEn : opt.labelHe}
-            </SelectItem>
-          ))}
-        </SelectContent>
-      </Select>
-    </div>
-  );
-}
-
-function DocThumbnail({ doc, onClick }: { doc: RichDoc; onClick: () => void }) {
-  const { t } = useLanguage();
-  return (
-    <button
-      onClick={onClick}
-      className="group relative w-full aspect-[3/4] max-h-48 rounded-xl border border-border/50 bg-muted/30 overflow-hidden cursor-pointer hover:border-primary/40 transition-colors"
-    >
-      <div className="p-4 space-y-2">
-        <div className="h-3 w-3/4 bg-foreground/10 rounded" />
-        <div className="h-2 w-full bg-foreground/5 rounded" />
-        <div className="h-2 w-5/6 bg-foreground/5 rounded" />
-        <div className="h-2 w-full bg-foreground/5 rounded" />
-        <div className="h-2 w-2/3 bg-foreground/5 rounded" />
-        <div className="mt-3 h-2.5 w-1/2 bg-primary/10 rounded" />
-        <div className="h-2 w-full bg-foreground/5 rounded" />
-        <div className="h-2 w-4/5 bg-foreground/5 rounded" />
-      </div>
-      <div className="absolute inset-0 flex items-center justify-center opacity-[0.06]">
-        <FileText className="w-20 h-20 text-foreground" />
-      </div>
-      <div className="absolute inset-0 bg-background/60 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
-        <div className="flex items-center gap-2 text-sm font-medium text-foreground">
-          <Maximize2 className="w-4 h-4" />
-          {t('viewDocument')}
-        </div>
-      </div>
-      <div className="absolute bottom-2 end-2 bg-background/80 backdrop-blur-sm text-[10px] font-mono px-2 py-0.5 rounded-md text-muted-foreground">
-        {doc.original_filename}
-      </div>
-    </button>
-  );
-}
 
 function FullScreenViewer({
   doc, open, onClose, onDelete, onToggleTax,
@@ -291,40 +198,58 @@ function FullScreenViewer({
                   </p>
                 </div>
 
-                {/* Tax toggle */}
-                <button
-                  onClick={onToggleTax}
-                  className={`w-full flex items-center justify-center gap-2 px-3 py-2.5 rounded-xl text-xs font-medium transition-all ${
-                    doc.tax_tagged
-                      ? 'bg-primary/10 border border-primary/30 text-primary'
-                      : 'bg-muted/40 border border-border/50 text-muted-foreground hover:bg-muted/60 hover:text-foreground'
-                  }`}
-                >
-                  <FileSpreadsheet className="w-3.5 h-3.5" />
-                  {doc.tax_tagged ? t('removeFromTax') : t('addToTax')}
-                </button>
-
-                {/* Share buttons */}
-                <div className="flex items-center gap-2">
-                  <Button variant="outline" size="sm" className="flex-1 h-9 text-xs gap-1.5" onClick={() => {
-                    const text = `${docName} — ${doc.provider}\n${getDocSummary(doc, lang)}`;
-                    window.open(`https://wa.me/?text=${encodeURIComponent(text)}`, '_blank');
-                  }}>
-                    <MessageCircle className="w-3.5 h-3.5" />{t('shareViaWhatsApp')}
-                  </Button>
-                  <Button variant="outline" size="sm" className="flex-1 h-9 text-xs gap-1.5" onClick={() => {
-                    const subject = encodeURIComponent(docName);
-                    const body = encodeURIComponent(`${docName} — ${doc.provider}\n\n${getDocSummary(doc, lang)}`);
-                    window.open(`mailto:?subject=${subject}&body=${body}`, '_blank');
-                  }}>
-                    <Mail className="w-3.5 h-3.5" />{t('shareViaEmail')}
-                  </Button>
-                  <Button variant="ghost" size="icon" className="h-9 w-9 shrink-0" onClick={() => {
-                    navigator.clipboard.writeText(`${docName} — ${doc.provider}\n${getDocSummary(doc, lang)}`);
-                    toast.success(t('linkCopied'));
-                  }}>
-                    <Copy className="w-3.5 h-3.5" />
-                  </Button>
+                {/* Action row — Tax / WhatsApp / Email / Copy */}
+                <div className="grid grid-cols-4 gap-1.5">
+                  {/* Tax */}
+                  <button
+                    onClick={onToggleTax}
+                    title={doc.tax_tagged ? t('removeFromTax') : t('addToTax')}
+                    className={`flex flex-col items-center justify-center gap-1 py-2 rounded-xl text-[10px] font-medium transition-all border ${
+                      doc.tax_tagged
+                        ? 'bg-primary/10 border-primary/30 text-primary'
+                        : 'bg-muted/40 border-border/50 text-muted-foreground hover:bg-muted/60 hover:text-foreground'
+                    }`}
+                  >
+                    <FileSpreadsheet className="w-4 h-4" />
+                    {lang === 'he' ? 'מס' : 'Tax'}
+                  </button>
+                  {/* WhatsApp */}
+                  <button
+                    title={t('shareViaWhatsApp')}
+                    onClick={() => {
+                      const text = `${docName} — ${doc.provider}\n${getDocSummary(doc, lang)}`;
+                      window.open(`https://wa.me/?text=${encodeURIComponent(text)}`, '_blank');
+                    }}
+                    className="flex flex-col items-center justify-center gap-1 py-2 rounded-xl text-[10px] font-medium bg-muted/40 border border-border/50 text-muted-foreground hover:bg-muted/60 hover:text-foreground transition-all"
+                  >
+                    <MessageCircle className="w-4 h-4" />
+                    {lang === 'he' ? 'וואטסאפ' : 'WhatsApp'}
+                  </button>
+                  {/* Email */}
+                  <button
+                    title={t('shareViaEmail')}
+                    onClick={() => {
+                      const subject = encodeURIComponent(docName);
+                      const body = encodeURIComponent(`${docName} — ${doc.provider}\n\n${getDocSummary(doc, lang)}`);
+                      window.open(`mailto:?subject=${subject}&body=${body}`, '_blank');
+                    }}
+                    className="flex flex-col items-center justify-center gap-1 py-2 rounded-xl text-[10px] font-medium bg-muted/40 border border-border/50 text-muted-foreground hover:bg-muted/60 hover:text-foreground transition-all"
+                  >
+                    <Mail className="w-4 h-4" />
+                    {lang === 'he' ? 'אימייל' : 'Email'}
+                  </button>
+                  {/* Copy */}
+                  <button
+                    title={t('linkCopied')}
+                    onClick={() => {
+                      navigator.clipboard.writeText(`${docName} — ${doc.provider}\n${getDocSummary(doc, lang)}`);
+                      toast.success(t('linkCopied'));
+                    }}
+                    className="flex flex-col items-center justify-center gap-1 py-2 rounded-xl text-[10px] font-medium bg-muted/40 border border-border/50 text-muted-foreground hover:bg-muted/60 hover:text-foreground transition-all"
+                  >
+                    <Copy className="w-4 h-4" />
+                    {lang === 'he' ? 'העתק' : 'Copy'}
+                  </button>
                 </div>
 
                 {/* Warnings */}

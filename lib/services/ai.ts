@@ -1,87 +1,21 @@
-import { GoogleGenerativeAI } from '@google/generative-ai';
 import { supabaseAdmin } from '@/supabase/client';
 import type { UICategory } from '@/nayeret_ai_schema_registry';
+import { parseBilingualJson } from '@/lib/utils/parse';
+import {
+  SCORE_WEIGHTS as CONFIG_SCORE_WEIGHTS,
+  MAX_RAW_SCORE as CONFIG_MAX_RAW_SCORE,
+  CONFIDENCE_THRESHOLDS as CONFIG_CONFIDENCE_THRESHOLDS,
+  HEADER_BOOST,
+  BILL_NO_AMOUNT_PENALTY,
+  TEXT_SLICE,
+} from '@/lib/config/pipeline';
+import {
+  IMAGE_EXTENSIONS, MIME_MAP, getExt,
+  callGemini, ocrImage, ocrPdfFallback, describeImage,
+} from '@/lib/services/gemini-client';
 
-export const IMAGE_EXTENSIONS = new Set(['png', 'jpg', 'jpeg', 'tiff', 'bmp', 'heic', 'heif']);
-export const MIME_MAP: Record<string, string> = {
-  png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg',
-  tiff: 'image/tiff', bmp: 'image/bmp',
-  heic: 'image/heic', heif: 'image/heif',
-};
-
-export function getExt(filename: string): string {
-  return filename.split('.').pop()?.toLowerCase() ?? '';
-}
-
-const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || '');
-const model = genAI.getGenerativeModel({ model: 'gemini-2.5-flash' });
-
-export async function callGemini(prompt: string, jsonMode = false): Promise<string> {
-  if (!process.env.GEMINI_API_KEY) {
-    throw new Error('GEMINI_API_KEY is missing.');
-  }
-  if (typeof prompt !== 'string' || !prompt.trim()) {
-    throw new Error('Gemini prompt is empty.');
-  }
-
-  try {
-    const result = await model.generateContent(prompt);
-    let text = result.response.text().trim();
-    if (jsonMode) {
-      text = text.replace(/^```(?:json)?\n?/, '').replace(/\n?```$/, '').trim();
-    }
-    return text;
-  } catch (err) {
-    throw new Error(`[callGemini] ${err instanceof Error ? err.message : String(err)}`);
-  }
-}
-
-export async function ocrImage(fileBuffer: Buffer, mimeType: string): Promise<string> {
-  if (!fileBuffer?.length) {
-    throw new Error('[ocrImage] File buffer is empty.');
-  }
-
-  try {
-    const result = await model.generateContent([
-      { inlineData: { data: fileBuffer.toString('base64'), mimeType } },
-      { text: 'You are an expert OCR agent. Extract all text from this image or document into plain text, preserving structure where possible. Return only the extracted text, no commentary.' },
-    ]);
-    return result.response.text().trim();
-  } catch (err) {
-    throw new Error(`[ocrImage] ${err instanceof Error ? err.message : String(err)}`);
-  }
-}
-
-export async function ocrPdfFallback(fileBuffer: Buffer): Promise<string> {
-  if (!fileBuffer?.length) {
-    throw new Error('[ocrPdfFallback] File buffer is empty.');
-  }
-
-  try {
-    const result = await model.generateContent([
-      { inlineData: { data: fileBuffer.toString('base64'), mimeType: 'application/pdf' } },
-      { text: 'You are an expert OCR agent. Extract all text from this PDF document into plain text, preserving structure where possible. Return only the extracted text, no commentary.' },
-    ]);
-    return result.response.text().trim();
-  } catch (err) {
-    throw new Error(`[ocrPdfFallback] ${err instanceof Error ? err.message : String(err)}`);
-  }
-}
-
-export async function describeImage(fileBuffer: Buffer, mimeType: string): Promise<{ he: string; en: string }> {
-  try {
-    const result = await model.generateContent([
-      { inlineData: { data: fileBuffer.toString('base64'), mimeType } },
-      { text: 'Describe this image in one sentence per language.\nReturn a JSON object with exactly two keys: "he" (Hebrew) and "en" (English).\nReturn only the JSON object, no other text.' },
-    ]);
-    const raw = result.response.text().trim().replace(/^```(?:json)?\n?/, '').replace(/\n?```$/, '').trim();
-    const parsed = JSON.parse(raw);
-    return { he: parsed.he ?? '', en: parsed.en ?? raw };
-  } catch {
-    return { he: '', en: '' };
-  }
-}
-
+// Re-export file-type helpers for backward compatibility with analyze.ts
+export { IMAGE_EXTENSIONS, MIME_MAP, getExt, callGemini, ocrImage, ocrPdfFallback, describeImage };
 export async function summarizeDocument(text: string): Promise<{ he: string; en: string }> {
   try {
     const raw = await callGemini(
@@ -93,13 +27,7 @@ export async function summarizeDocument(text: string): Promise<{ he: string; en:
       `Return only the JSON object, no other text.\n\nDocument:\n${text.slice(0, 8000)}`,
       true
     );
-    try {
-      const parsed = JSON.parse(raw);
-      if (!parsed.he || !parsed.en) throw new Error('Missing keys');
-      return parsed;
-    } catch {
-      return { he: '', en: raw };
-    }
+    return parseBilingualJson(raw);
   } catch (err) {
     console.warn('[summarizeDocument] Gemini call failed:', String(err));
     return { he: '', en: '' };
@@ -115,18 +43,9 @@ export interface ClassificationResult {
   scores: Record<string, number>; // raw score per type (for debugging)
 }
 
-const SCORE_WEIGHTS = {
-  title_match:       6,
-  vendor_match:      5,
-  ocr_pattern_match: 4,
-  keyword_match:     3,
-  layout_hint_match: 2,
-  language_hint_match: 1,
-} as const;
-
-const MAX_RAW_SCORE = 21; // 6+5+4+3+2+1
-
-const CONFIDENCE_THRESHOLDS = { high: 0.85, medium: 0.65, low: 0.45 } as const;
+const SCORE_WEIGHTS = CONFIG_SCORE_WEIGHTS;
+const MAX_RAW_SCORE = CONFIG_MAX_RAW_SCORE;
+const CONFIDENCE_THRESHOLDS = CONFIG_CONFIDENCE_THRESHOLDS;
 
 function scoreType(
   textSlice: string,
@@ -163,18 +82,18 @@ function scoreType(
     score += SCORE_WEIGHTS.language_hint_match;
   }
 
-  // header_boost (+2): any keyword or vendor appears in the first 200 chars (title / header region)
+  // header_boost: any keyword or vendor appears in the first 200 chars (title / header region)
   // This strongly favours the correct type when the document title is clear.
   const headerLower = textSlice.slice(0, 200).toLowerCase();
   if (
     keywords.some(k => headerLower.includes(k.toLowerCase())) ||
     vendors.some(v => headerLower.includes(v.toLowerCase()))
   ) {
-    score += 2;
+    score += HEADER_BOOST;
   }
 
   // per-type negative: bill/invoice type but no monetary amount detected
-  if (/bill|invoice|חשבונית/i.test(type.name) && !/\d[\d,. ]*/.test(textSlice)) score -= 3;
+  if (/bill|invoice|חשבונית/i.test(type.name) && !/\d[\d,. ]*/.test(textSlice)) score += BILL_NO_AMOUNT_PENALTY;
 
   return score;
 }
@@ -211,7 +130,7 @@ export async function classifyDocument(
     return { typeName: 'Other', confidence: 0, confidenceLevel: 'unclassified', scores: {} };
   }
 
-  const textSlice = text.slice(0, 5000);
+  const textSlice = text.slice(0, TEXT_SLICE.score);
   const textLower = textSlice.toLowerCase();
   const hasHebrew  = /[\u0590-\u05FF]/.test(textSlice);
 
@@ -225,7 +144,11 @@ export async function classifyDocument(
     scores[type.name] = Math.max(0, scoreType(textSlice, textLower, hasHebrew, type) + globalPenalty);
   }
 
-  const [bestName, bestRaw] = Object.entries(scores).sort(([, a], [, b]) => b - a)[0];
+  const sortedEntries = Object.entries(scores).sort(([, a], [, b]) => b - a);
+  if (sortedEntries.length === 0) {
+    return { typeName: 'Other', confidence: 0, confidenceLevel: 'unclassified', scores };
+  }
+  const [bestName, bestRaw] = sortedEntries[0];
   const confidence = Math.min(bestRaw / MAX_RAW_SCORE, 1);
 
   let confidenceLevel: ClassificationResult['confidenceLevel'];
@@ -485,7 +408,10 @@ export async function extractStructured(
         `Fields:\n${fieldList}\n\nDocument:\n${text.slice(0, 6000)}`,
         true
       );
-      try { return JSON.parse(fallbackRaw) as Record<string, unknown>; } catch { return {}; }
+      try { return JSON.parse(fallbackRaw) as Record<string, unknown>; } catch (parseErr) {
+        console.error('[extractStructured] Fallback JSON parse failed:', parseErr instanceof Error ? parseErr.message : String(parseErr), '| raw:', fallbackRaw.slice(0, 200));
+        return {};
+      }
     } catch (fallbackErr) {
       console.warn('[extractStructured] Bare fallback failed:', String(fallbackErr));
       return {};
@@ -561,7 +487,8 @@ export async function discoverDocumentType(text: string): Promise<DiscoveredType
     }
 
     return parsed;
-  } catch {
+  } catch (err) {
+    console.error('[discoverDocumentType] Failed to parse Gemini response:', err instanceof Error ? err.message : String(err));
     return null;
   }
 }

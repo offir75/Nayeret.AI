@@ -10,10 +10,10 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   }
 
   // Token passed as query param so <iframe> can load it without custom headers
-  const token = req.query.t as string;
-  const id    = req.query.id as string;
-  if (!token || !id) {
-    res.status(400).json({ error: 'Missing id or t' });
+  const token = req.query.t;
+  const id    = req.query.id;
+  if (typeof token !== 'string' || !token.trim() || typeof id !== 'string' || !id.trim()) {
+    res.status(400).json({ error: 'Missing or invalid id / t parameters' });
     return;
   }
 

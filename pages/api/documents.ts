@@ -2,6 +2,7 @@ import { NextApiRequest, NextApiResponse } from 'next';
 import { supabaseAdmin } from '@/supabase/client';
 import { getUserIdFromRequest } from '@/lib/services/auth';
 import { deleteFile } from '@/lib/services/storage';
+import { UI_CATEGORIES } from '@/nayeret_ai_schema_registry';
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   // ── Auth ──────────────────────────────────────────────────────────────────
@@ -87,7 +88,26 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       ui_category?: string;
       raw_analysis?: Record<string, unknown>;
     };
-    if (!id) { res.status(400).json({ error: 'Missing document id' }); return; }
+    if (typeof id !== 'string' || !id.trim()) {
+      res.status(400).json({ error: 'Missing or invalid document id' });
+      return;
+    }
+    if (user_notes !== undefined && (typeof user_notes !== 'string' || user_notes.length > 10_000)) {
+      res.status(400).json({ error: 'user_notes must be a string under 10,000 characters' });
+      return;
+    }
+    if (document_type !== undefined && typeof document_type !== 'string') {
+      res.status(400).json({ error: 'document_type must be a string' });
+      return;
+    }
+    if (ui_category !== undefined && !(UI_CATEGORIES as readonly string[]).includes(ui_category)) {
+      res.status(400).json({ error: `ui_category must be one of: ${UI_CATEGORIES.join(', ')}` });
+      return;
+    }
+    if (rawPatch !== undefined && (typeof rawPatch !== 'object' || Array.isArray(rawPatch) || rawPatch === null)) {
+      res.status(400).json({ error: 'raw_analysis must be a plain object' });
+      return;
+    }
 
     const { data: existing, error: fetchError } = await supabaseAdmin
       .from('documents')
@@ -103,7 +123,10 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     if (document_type !== undefined) patch.document_type = document_type;
     if (ui_category !== undefined) patch.ui_category = ui_category;
     if (rawPatch !== undefined) {
-      patch.raw_analysis = { ...(existing.raw_analysis as Record<string, unknown> ?? {}), ...rawPatch };
+      const existingAnalysis = typeof existing.raw_analysis === 'object' && existing.raw_analysis !== null
+        ? (existing.raw_analysis as Record<string, unknown>)
+        : {};
+      patch.raw_analysis = { ...existingAnalysis, ...rawPatch };
       patch.insights = patch.raw_analysis;
     }
 
