@@ -159,6 +159,21 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
           return;
         }
       }
+
+      // Hebrew RTL fix: pdf-parse extracts text in PDF stream order, which for RTL documents
+      // can place decimal number parts in visual (left-to-right) order rather than logical order.
+      // Example: "69.99 ₪" → extracted as "99.69" when the PDF splits the number across two
+      // glyph runs stored in reversed stream order.  Gemini Vision renders the PDF visually and
+      // reads numbers correctly, so we replace the garbled text for any Hebrew-containing PDF.
+      if (text.trim() && /[\u05D0-\u05EA]/.test(text)) {
+        console.info('[extract] Hebrew PDF detected — using Gemini Vision OCR to fix RTL number ordering:', filename);
+        try {
+          const visionText = await ocrPdfFallback(fileBuffer);
+          if (visionText.trim()) text = visionText;
+        } catch (err) {
+          console.warn('[extract] Gemini Vision OCR failed for Hebrew PDF, keeping pdf-parse text:', String(err));
+        }
+      }
     }
 
     // 3. Triage: is this a real document (not a photo/meme/logo)?
