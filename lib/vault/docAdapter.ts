@@ -128,9 +128,9 @@ export function enrichDoc(doc: VaultDoc): RichDoc {
   // Normalise common aliases to standard ISO codes
   const currency = rawCurrency === 'NIS' ? 'ILS' : rawCurrency.toUpperCase();
 
-  const due_date = pickString(analysis, 'due_date', 'next_payment_date', 'payment_due_date');
+  const due_date = pickString(analysis, 'due_date', 'next_payment_date', 'payment_due_date', 'credit_card_submission_date', 'charge_date', 'billing_date', 'submission_date');
 
-  const issue_date = pickString(analysis, 'issue_date', 'invoice_date', 'statement_date', 'date');
+  const issue_date = pickString(analysis, 'issue_date', 'invoice_date', 'statement_date', 'transaction_date', 'purchase_date', 'payment_date', 'date');
 
   const next_reminder_date = pickString(
     analysis,

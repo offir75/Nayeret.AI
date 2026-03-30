@@ -1,12 +1,16 @@
 /** @type {import('next').NextConfig} */
+const extraOrigins = process.env.ALLOWED_ORIGINS
+  ? process.env.ALLOWED_ORIGINS.split(',').map((s) => s.trim())
+  : [];
+
 const nextConfig = {
   experimental: {
     serverActions: {
       allowedOrigins: [
-        'thermophosphorescent-calamitoid-yadira.ngrok-free.dev',
+        'localhost:3000',
         '*.ngrok-free.dev',
         '*.ngrok-free.app',
-        'localhost:3000'
+        ...extraOrigins,
       ],
     },
   },

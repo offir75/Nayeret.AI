@@ -69,7 +69,7 @@ const REMINDER_OPTIONS = [
 function FullScreenViewer({
   doc, open, onClose, onDelete, onToggleTax,
   amount, setAmount, dueDate, setDueDate, category, setCategory, userNotes, setUserNotes,
-  onSave, onPrev, onNext, hasPrev, hasNext, swipeHandlers, isDirty, token,
+  onSave, onPrev, onNext, hasPrev, hasNext, swipeHandlers, isDirty, isReceipt, token,
 }: {
   doc: RichDoc; open: boolean; onClose: () => void; onDelete: () => void; onToggleTax: () => void;
   amount: string; setAmount: (v: string) => void;
@@ -80,10 +80,20 @@ function FullScreenViewer({
   onPrev?: () => void; onNext?: () => void; hasPrev: boolean; hasNext: boolean;
   swipeHandlers?: { onTouchStart: (e: React.TouchEvent) => void; onTouchEnd: (e: React.TouchEvent) => void };
   isDirty: boolean;
+  isReceipt: boolean;
   token: string;
 }) {
   const { t, lang, isRtl } = useLanguage();
-  const evidence = (doc.insights?._field_evidence ?? {}) as Record<string, { source: string; value: string; page?: number }>;
+  const rawEvidence = (doc.insights?._field_evidence ?? {}) as Record<string, { source: string; value: unknown; page?: number }>;
+  const evidence = Object.fromEntries(
+    Object.entries(rawEvidence).filter(([, ev]) => {
+      if (ev == null) return false;
+      const v = ev.value;
+      if (v == null || v === '') return false;
+      if (Array.isArray(v) && v.length === 0) return false;
+      return true;
+    })
+  ) as Record<string, { source: string; value: string; page?: number }>;
   const warnings = (doc.insights?.warnings ?? []) as string[];
   const docName = getDocName(doc, lang);
   const fileUrl = token ? `/api/file?id=${doc.id}&t=${encodeURIComponent(token)}` : null;
@@ -295,7 +305,7 @@ function FullScreenViewer({
                     </div>
                   </div>
                   <div className="space-y-2">
-                    <Label className="text-xs text-muted-foreground">{t('dueDate')}</Label>
+                    <Label className="text-xs text-muted-foreground">{isReceipt ? t('paymentDate') : t('dueDate')}</Label>
                     <Input
                       value={dueDate}
                       onChange={(e) => setDueDate(e.target.value)}
@@ -303,7 +313,7 @@ function FullScreenViewer({
                       type="date"
                     />
                   </div>
-                  <DocReminderControl docId={doc.id} hasDueDate={!!dueDate} lang={lang} />
+                  {!isReceipt && <DocReminderControl docId={doc.id} hasDueDate={!!dueDate} lang={lang} />}
                   <div className="space-y-2">
                     <Label className="text-xs text-muted-foreground">{t('category')}</Label>
                     <Select value={category} onValueChange={setCategory}>
@@ -328,7 +338,7 @@ function FullScreenViewer({
                       <FileText className="w-3.5 h-3.5" />{t('fieldEvidence')}
                     </h3>
                     <div className="space-y-2">
-                      {Object.entries(evidence).filter(([, ev]) => ev != null).map(([field, ev]) => (
+                      {Object.entries(evidence).map(([field, ev]) => (
                         <div key={field} className="bg-muted/30 rounded-lg p-3 flex items-center justify-between text-xs">
                           <div>
                             <span className="text-muted-foreground">{field}</span>
@@ -389,6 +399,9 @@ function FullScreenViewer({
 
 // ─── Main export ──────────────────────────────────────────────────────────────
 
+// Categories where a document represents a completed payment — no future due date relevant.
+const RECEIPT_CATEGORIES = new Set(['Bills & Receipts', 'Income']);
+
 export function FixerSidebar({ document: doc, documents = [], open, onClose, onDelete, onUpdateDoc, onNavigate, token }: FixerSidebarProps) {
   const { t, lang, isRtl } = useLanguage();
   const [amount, setAmount] = useState('');
@@ -396,10 +409,15 @@ export function FixerSidebar({ document: doc, documents = [], open, onClose, onD
   const [category, setCategory] = useState('');
   const [userNotes, setUserNotes] = useState('');
 
+  // For receipt-type documents the "date" field shows when payment was made (issue_date /
+  // transaction_date), not a future due date.  We reuse the same dueDate state but bind it
+  // to the appropriate document field depending on category.
+  const isReceipt = RECEIPT_CATEGORIES.has(doc?.ui_category ?? '');
+
   useEffect(() => {
     if (doc) {
       setAmount(doc.amount?.toString() || '');
-      setDueDate(doc.due_date || '');
+      setDueDate(isReceipt ? (doc.issue_date || '') : (doc.due_date || ''));
       setCategory(doc.ui_category ?? '');
       setUserNotes(doc.user_notes || '');
     }
@@ -407,7 +425,7 @@ export function FixerSidebar({ document: doc, documents = [], open, onClose, onD
 
   const isDirty = doc ? (
     amount     !== (doc.amount?.toString() || '') ||
-    dueDate    !== (doc.due_date || '') ||
+    dueDate    !== (isReceipt ? (doc.issue_date || '') : (doc.due_date || '')) ||
     category   !== (doc.ui_category ?? '') ||
     userNotes  !== (doc.user_notes || '')
   ) : false;
@@ -448,8 +466,9 @@ export function FixerSidebar({ document: doc, documents = [], open, onClose, onD
       if (doc && onUpdateDoc) {
         onUpdateDoc({
           ...doc,
-          amount:     amount ? Number(amount) : null,
-          due_date:   dueDate || null,
+          amount:      amount ? Number(amount) : null,
+          due_date:    isReceipt ? doc.due_date : (dueDate || null),
+          issue_date:  isReceipt ? (dueDate || null) : doc.issue_date,
           ui_category: category,
           user_notes:  userNotes,
           reviewed:    true,
@@ -495,6 +514,7 @@ export function FixerSidebar({ document: doc, documents = [], open, onClose, onD
       hasPrev={hasPrev} hasNext={hasNext}
       swipeHandlers={swipeHandlers}
       isDirty={isDirty}
+      isReceipt={isReceipt}
       token={token}
     />
   );

@@ -64,15 +64,18 @@ function buildInitialPages(initialFiles?: string[]): CapturedPage[] {
   });
 }
 
-export const CaptureWizard = ({ onExit, onClose, initialFiles, isExiting, exitResults, onComplete, onCardClick, onForceReupload }: {
+export const CaptureWizard = ({ onExit, onClose, initialFiles, isExiting, exitResults, pendingQueue, activeFileName, onComplete, onCardClick, onForceReupload, onCancelQueued }: {
   onExit: (result: CaptureResult) => void;
   onClose?: () => void;
   initialFiles?: string[];
   isExiting?: boolean;
   exitResults?: DocResultCard[];
+  pendingQueue?: { id: string; name: string }[];
+  activeFileName?: string | null;
   onComplete?: () => void;
   onCardClick?: (card: DocResultCard) => void;
   onForceReupload?: (key: string) => void;
+  onCancelQueued?: (id: string) => void;
 }) => {
   const { t, lang, isRtl } = useLanguage();
   const hasInitial = initialFiles && initialFiles.length > 0;
@@ -120,14 +123,16 @@ export const CaptureWizard = ({ onExit, onClose, initialFiles, isExiting, exitRe
     <ProcessingStep
       key="processing"
       pageCount={pages.length}
-      pageNames={pages.map((_, i) => `${docLabel} ${i + 1}`)}
       bundleName={bundleName}
       onDone={handleDone}
       onScanMore={() => { setPages([]); setStep(0); }}
       onCardClick={onCardClick}
       onForceReupload={onForceReupload}
+      onCancelQueued={onCancelQueued}
       isExiting={isExiting}
       exitResults={exitResults}
+      pendingQueue={pendingQueue}
+      activeFileName={activeFileName}
     />,
   ];
 

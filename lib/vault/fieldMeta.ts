@@ -21,20 +21,47 @@ export const DOC_TYPE_LABELS: Record<DocumentType, { en: string; he: string }> =
 export const EDITABLE_FIELDS: Record<string, string[]> = {
   // Legacy enum types
   bill:             ['provider',    'total_amount',  'currency', 'due_date'      ],
-  receipt:          ['merchant',    'total_amount',  'currency', 'purchase_date' ],
+  receipt:          ['merchant',    'total_amount',  'currency', 'purchase_date', 'payment_method', 'reference_number'],
   financial_report: ['institution', 'total_balance', 'currency', 'liquidity_date'],
   claim:            ['insurer',     'total_amount',  'currency', 'claim_date'    ],
   insurance:        ['insurer',     'policy_number', 'premium_amount', 'expiry_date'],
   identification:   ['full_name',   'id_number',     'expiry_date'               ],
   other:            ['provider',    'total_amount',  'currency'                  ],
   // Common free-form taxonomy types (lowercase for case-insensitive lookup)
-  passport:         ['full_name',   'id_number',     'expiry_date'               ],
-  invoice:                    ['provider',    'total_amount',  'currency',  'due_date',  'reference_number'],
-  'saas subscription invoice': ['provider',   'total_amount',  'currency',  'due_date',  'reference_number'],
-  'pay stub':       ['institution', 'total_amount',  'currency',  'purchase_date'],
-  'bank statement': ['institution', 'total_balance', 'currency',  'liquidity_date'],
-  contract:         ['provider',    'expiry_date'                                ],
-  warranty:         ['provider',    'expiry_date'                                ],
+  passport:                    ['full_name',    'id_number',     'expiry_date'                                          ],
+  invoice:                     ['provider',     'total_amount',  'currency',  'due_date',  'reference_number'            ],
+  'tax invoice':               ['provider',     'total_amount',  'currency',  'due_date',  'reference_number'            ],
+  'saas subscription invoice': ['provider',     'total_amount',  'currency',  'due_date',  'reference_number'            ],
+  'software subscription invoice': ['provider', 'total_amount',  'currency',  'due_date',  'reference_number'            ],
+  'streaming subscription receipt': ['provider','total_amount',  'currency',  'purchase_date'                            ],
+  'pay stub':                  ['institution',  'total_amount',  'currency',  'purchase_date'                            ],
+  'bank statement':            ['institution',  'total_balance', 'currency',  'liquidity_date'                           ],
+  contract:                    ['provider',     'expiry_date'                                                             ],
+  warranty:                    ['provider',     'expiry_date'                                                             ],
+  // Receipt taxonomy types
+  'retail receipt':            ['merchant',     'total_amount',  'currency',  'purchase_date', 'payment_method', 'reference_number'],
+  'supermarket receipt':       ['merchant',     'total_amount',  'currency',  'purchase_date', 'payment_method'                   ],
+  'restaurant receipt':        ['merchant',     'total_amount',  'currency',  'purchase_date', 'payment_method'                   ],
+  'pharmacy receipt':          ['merchant',     'total_amount',  'currency',  'purchase_date', 'payment_method'                   ],
+  'gas station receipt':       ['merchant',     'total_amount',  'currency',  'purchase_date', 'payment_method'                   ],
+  'online purchase receipt':   ['merchant',     'total_amount',  'currency',  'purchase_date', 'payment_method', 'reference_number'],
+  // Bill taxonomy types
+  'electricity bill':          ['provider',     'total_amount',  'currency',  'due_date',  'reference_number'            ],
+  'water bill':                ['provider',     'total_amount',  'currency',  'due_date',  'reference_number'            ],
+  'gas bill':                  ['provider',     'total_amount',  'currency',  'due_date',  'reference_number'            ],
+  'telecom bill':              ['provider',     'total_amount',  'currency',  'due_date',  'reference_number'            ],
+  'internet bill':             ['provider',     'total_amount',  'currency',  'due_date',  'reference_number'            ],
+  'cable / tv bill':           ['provider',     'total_amount',  'currency',  'due_date',  'reference_number'            ],
+  'municipality tax bill':     ['provider',     'total_amount',  'currency',  'due_date',  'reference_number'            ],
+  'hoa / building fee bill':   ['provider',     'total_amount',  'currency',  'due_date',  'reference_number'            ],
+  'parking subscription bill': ['provider',     'total_amount',  'currency',  'due_date',  'reference_number'            ],
+  'tuition bill':              ['provider',     'total_amount',  'currency',  'due_date',  'reference_number'            ],
+  // Medical
+  'medical bill':              ['provider',     'total_amount',  'currency',  'purchase_date'                            ],
+  'prescription':              ['provider',     'total_amount',  'currency',  'purchase_date'                            ],
+  // Travel
+  'flight ticket':             ['provider',     'total_amount',  'currency',  'purchase_date', 'reference_number'        ],
+  'hotel reservation':         ['provider',     'total_amount',  'currency',  'due_date',  'reference_number'            ],
 };
 
 /** Translations for free-form taxonomy type names (keyed lowercase). */
@@ -121,23 +148,24 @@ export function getEditableFields(type: string): string[] {
 export type FieldType = 'text' | 'number' | 'date' | 'currency';
 
 export const FIELD_META: Record<string, { en: string; he: string; type: FieldType }> = {
-  provider:         { en: 'Provider',       he: 'ספק',            type: 'text'     },
-  total_amount:     { en: 'Amount',         he: 'סכום',           type: 'number'   },
-  currency:         { en: 'Currency',       he: 'מטבע',           type: 'currency' },
-  due_date:         { en: 'Due Date',       he: 'תאריך פירעון',   type: 'date'     },
-  merchant:         { en: 'Merchant',       he: 'בית עסק',        type: 'text'     },
-  purchase_date:    { en: 'Purchase Date',  he: 'תאריך רכישה',    type: 'date'     },
-  institution:      { en: 'Institution',    he: 'מוסד',           type: 'text'     },
-  total_balance:    { en: 'Balance',        he: 'יתרה',           type: 'number'   },
-  liquidity_date:   { en: 'Liquidity Date', he: 'תאריך נזילות',   type: 'date'     },
-  insurer:          { en: 'Insurer',        he: 'מבטח',           type: 'text'     },
-  claim_date:       { en: 'Claim Date',     he: 'תאריך תביעה',    type: 'date'     },
-  policy_number:    { en: 'Policy Number',  he: 'מספר פוליסה',    type: 'text'     },
-  premium_amount:   { en: 'Premium',        he: 'פרמיה',          type: 'number'   },
-  expiry_date:      { en: 'Expiry Date',    he: 'תאריך תפוגה',    type: 'date'     },
-  full_name:        { en: 'Full Name',      he: 'שם מלא',         type: 'text'     },
-  id_number:        { en: 'ID Number',      he: 'מספר ת.ז.',      type: 'text'     },
-  reference_number: { en: 'Reference No.',  he: 'מספר אסמכתא',    type: 'text'     },
+  provider:         { en: 'Provider',        he: 'ספק',             type: 'text'     },
+  total_amount:     { en: 'Amount',          he: 'סכום',            type: 'number'   },
+  currency:         { en: 'Currency',        he: 'מטבע',            type: 'currency' },
+  due_date:         { en: 'Due Date',        he: 'תאריך פירעון',    type: 'date'     },
+  merchant:         { en: 'Merchant',        he: 'בית עסק',         type: 'text'     },
+  purchase_date:    { en: 'Date',            he: 'תאריך',           type: 'date'     },
+  payment_method:   { en: 'Payment Method',  he: 'אמצעי תשלום',     type: 'text'     },
+  institution:      { en: 'Institution',     he: 'מוסד',            type: 'text'     },
+  total_balance:    { en: 'Balance',         he: 'יתרה',            type: 'number'   },
+  liquidity_date:   { en: 'Liquidity Date',  he: 'תאריך נזילות',    type: 'date'     },
+  insurer:          { en: 'Insurer',         he: 'מבטח',            type: 'text'     },
+  claim_date:       { en: 'Claim Date',      he: 'תאריך תביעה',     type: 'date'     },
+  policy_number:    { en: 'Policy Number',   he: 'מספר פוליסה',     type: 'text'     },
+  premium_amount:   { en: 'Premium',         he: 'פרמיה',           type: 'number'   },
+  expiry_date:      { en: 'Expiry Date',     he: 'תאריך תפוגה',     type: 'date'     },
+  full_name:        { en: 'Full Name',       he: 'שם מלא',          type: 'text'     },
+  id_number:        { en: 'ID Number',       he: 'מספר ת.ז.',       type: 'text'     },
+  reference_number: { en: 'Reference No.',   he: 'מספר אסמכתא',     type: 'text'     },
 };
 
 /**
@@ -145,20 +173,43 @@ export const FIELD_META: Record<string, { en: string; he: string; type: FieldTyp
  * Prevents duplicate fields when the AI uses different naming conventions.
  */
 export const FIELD_ALIASES: Record<string, string> = {
-  issuer:         'provider',
-  vendor:         'provider',
-  company:        'provider',
-  employer:       'provider',
-  employer_name:  'provider',
-  amount:         'total_amount',
-  total:          'total_amount',
-  document_date:  'due_date',
-  date_of_issue:  'due_date',
-  invoice_date:   'due_date',
-  issue_date:     'due_date',
-  invoice_number: 'reference_number',
-  doc_number:     'reference_number',
-  currency_code:  'currency',
+  // Provider / merchant
+  issuer:               'provider',
+  vendor:               'provider',
+  company:              'provider',
+  company_name:         'provider',
+  employer:             'provider',
+  employer_name:        'provider',
+  merchant_name:        'merchant',
+  store_name:           'merchant',
+  // Amount
+  amount:               'total_amount',
+  total:                'total_amount',
+  invoice_amount:       'total_amount',
+  net_amount:           'total_amount',
+  gross_amount:         'total_amount',
+  // Currency
+  currency_code:        'currency',
+  // Dates — bill/invoice context → due_date
+  document_date:        'due_date',
+  date_of_issue:        'due_date',
+  invoice_date:         'due_date',
+  issue_date:           'due_date',
+  bill_date:            'due_date',
+  // Dates — receipt/purchase context → purchase_date
+  transaction_date:     'purchase_date',
+  sale_date:            'purchase_date',
+  payment_date:         'purchase_date',
+  // Reference numbers
+  invoice_number:       'reference_number',
+  doc_number:           'reference_number',
+  transaction_id:       'reference_number',
+  transaction_reference:'reference_number',
+  order_number:         'reference_number',
+  receipt_number:       'reference_number',
+  // Payment
+  payment_type:         'payment_method',
+  payment_mode:         'payment_method',
 };
 
 const SYMBOL_TO_CURRENCY: Record<string, string> = { '$': 'USD', '₪': 'ILS', '€': 'EUR', '£': 'GBP' };
@@ -190,6 +241,13 @@ export function normalizeSource(raw: Record<string, unknown>): Record<string, un
   return out;
 }
 
+const SKIP_KEYS = new Set([
+  'is_media', 'document_type_name', 'document_type_name_he',
+  // Complex nested objects — not suitable for single-line text inputs
+  'items', 'line_items', 'products', '_field_evidence',
+  'confidence', 'summary', 'summary_he', 'summary_en',
+]);
+
 /** Initialize a drafts map, preferring insights over raw_analysis. Includes all keys. */
 export function initDrafts(
   rawAnalysis: Record<string, unknown> | null,
@@ -198,24 +256,21 @@ export function initDrafts(
   const raw = (insights && Object.keys(insights).length > 0 ? insights : rawAnalysis) ?? {};
   const source = normalizeSource(raw);
   const result: Record<string, string> = {};
-  const SKIP = new Set(['is_media', 'document_type_name']);
   Object.keys(FIELD_META).forEach(key => {
     result[key] = source[key] != null ? String(source[key]) : '';
   });
   Object.keys(source).forEach(key => {
-    if (!(key in result) && !SKIP.has(key)) {
+    if (!(key in result) && !SKIP_KEYS.has(key)) {
       result[key] = source[key] != null ? String(source[key]) : '';
     }
   });
   return result;
 }
 
-const SKIP_KEYS = new Set(['is_media', 'document_type_name']);
-
 /** Return the non-empty, non-meta field keys present in insights. */
 export function getInsightFields(insights: Record<string, unknown> | null | undefined): string[] {
   if (!insights) return [];
-  return Object.keys(insights).filter(k => !SKIP_KEYS.has(k) && insights[k] != null && insights[k] !== '');
+  return Object.keys(insights).filter(k => !SKIP_KEYS.has(k) && insights[k] != null && insights[k] !== '' && typeof insights[k] !== 'object');
 }
 
 /** Convert a snake_case key to a human-readable Title Case label. */

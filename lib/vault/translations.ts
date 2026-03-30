@@ -158,6 +158,7 @@ export const translations = {
   addComment:              { he: 'הוסף הערה על המסמך...', en: 'Add a comment about the document...' },
   editFields:              { he: 'עריכת שדות',             en: 'Edit Fields'              },
   dueDate:                 { he: 'תאריך לתשלום',           en: 'Due Date'                 },
+  paymentDate:             { he: 'תאריך תשלום',            en: 'Payment Date'             },
   fieldEvidence:           { he: 'עדויות שדה',             en: 'Field Evidence'           },
   saveChanges:             { he: 'שמור שינויים',           en: 'Save Changes'             },
   deleteDocument:          { he: 'מחק מסמך',               en: 'Delete Document'          },

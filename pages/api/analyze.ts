@@ -398,6 +398,33 @@ ${text.slice(0, 1000)}`,
       (effectiveMatchedRow as (typeof effectiveMatchedRow & { display_name_he?: string | null }))?.display_name_he ?? '';
     if (hebrewTypeName) insights.document_type_name_he = hebrewTypeName;
 
+    // Hebrew "סה"כ" authority: Israeli receipts/invoices always mark the bottom-line total
+    // with "סה"כ <amount> ש"ח".  When the AI extracted a pre-tax unit price instead of the
+    // VAT-inclusive total, override with the explicit OCR total.
+    // Only fires when the document contains Hebrew text (כ → U+05DB is a reliable marker).
+    if (/[\u05D0-\u05EA]/.test(text)) {
+      // Match "סה"כ 320 ש"ח", "סה"כ: 320", "סה"כ לתשלום כולל מע"מ 13.86 ₪", etc.
+      // Allow up to 60 non-digit characters between סה"כ and the amount to handle
+      // verbose Hebrew labels like "לתשלום כולל מע"מ" before the number.
+      const heTotal = text.match(/סה["\u05BA]כ[^0-9]{0,60}?([0-9,]+(?:\.[0-9]+)?)/);
+      if (heTotal) {
+        const heAmount = parseFloat(heTotal[1].replace(/,/g, ''));
+        if (!isNaN(heAmount) && heAmount > 0) {
+          const currentAmount = typeof insights.amount === 'number' ? insights.amount
+            : typeof insights.total_amount === 'number' ? insights.total_amount : null;
+          // Override when: (a) no amount extracted yet, or (b) extracted amount looks like
+          // a pre-tax price — i.e. the "סה"כ" value is ~17-18% higher (Israeli VAT range).
+          const vatRatio = currentAmount != null ? heAmount / currentAmount : null;
+          if (currentAmount == null || (vatRatio != null && vatRatio > 1.05 && vatRatio < 1.30)) {
+            insights.total_amount = heAmount;
+            insights.amount = heAmount;
+            if (!insights.currency) insights.currency = 'ILS';
+            console.log('[extract] he-total override: סה"כ =', heAmount, '(was', currentAmount, ')');
+          }
+        }
+      }
+    }
+
     // 7. Bilingual Zen summary
     const summaries = await summarizeDocument(text);
     // Summary-mirror: if extraction missed amount OR currency, parse the bilingual summary

@@ -2147,7 +2147,10 @@
         "keywords_he": [
           "חשבון חשמל",
           "מספר צרכן",
-          "קוט\"ש"
+          "קוט\"ש",
+          "חשבונית מס",
+          "לתשלום",
+          "מע\"מ"
         ],
         "keywords_en": [
           "electricity bill",
@@ -2216,7 +2219,10 @@
       "semantic_signals": {
         "keywords_he": [
           "חשבון מים",
-          "צריכת מים"
+          "צריכת מים",
+          "חשבונית מס",
+          "לתשלום",
+          "מע\"מ"
         ],
         "keywords_en": [
           "water bill",
@@ -2278,7 +2284,10 @@
       "matching_description": "Utility bill for household or building gas supply.",
       "semantic_signals": {
         "keywords_he": [
-          "חשבון גז"
+          "חשבון גז",
+          "חשבונית מס",
+          "לתשלום",
+          "מע\"מ"
         ],
         "keywords_en": [
           "gas bill",
@@ -2342,7 +2351,12 @@
       "semantic_signals": {
         "keywords_he": [
           "אינטרנט",
-          "ספק אינטרנט"
+          "ספק אינטרנט",
+          "חשבונית מס",
+          "לתשלום",
+          "מע\"מ",
+          "דמי מנוי",
+          "מנוי"
         ],
         "keywords_en": [
           "internet bill",
@@ -2353,23 +2367,19 @@
           "monthly service summary"
         ],
         "vendor_examples": [
-          "Israel Electric Corporation",
-          "Mekorot",
-          "מי אביבים",
           "Bezeq",
+          "בזק",
           "HOT",
           "Cellcom",
+          "סלקום",
           "Partner",
-          "Pelephone",
-          "yes",
+          "פרטנר",
+          "Yes",
           "Comcast Xfinity",
           "Spectrum",
           "AT&T",
           "Verizon",
-          "T-Mobile",
-          "Cox",
-          "PG&E",
-          "Con Edison"
+          "Cox"
         ],
         "ocr_patterns": []
       },
@@ -2385,22 +2395,22 @@
           "required": false
         },
         "bill_date": {
-          "description": "Billing / issue date",
+          "description": "Billing / issue date (תאריך עריכת החשבון)",
           "data_type": "date",
           "required": true
         },
         "due_date": {
-          "description": "Payment due date",
+          "description": "Payment due date — the date the charge will be submitted to the credit card or bank. In Israeli bills look for 'יוגש לחברת האשראי לא לפני' or 'תאריך לתשלום'.",
           "data_type": "date",
           "required": false
         },
         "billing_period": {
-          "description": "Billing period / service period",
+          "description": "Billing period / service period (תקופת החשבון)",
           "data_type": "string",
           "required": false
         },
         "total_amount": {
-          "description": "Total amount due",
+          "description": "Total amount due including VAT (סה\"כ לתשלום כולל מע\"מ)",
           "data_type": "currency_amount",
           "required": true
         },
@@ -2420,7 +2430,13 @@
       "semantic_signals": {
         "keywords_he": [
           "חשבון טלפון",
-          "מספר קו"
+          "מספר קו",
+          "חשבונית מס",
+          "לתשלום",
+          "מע\"מ",
+          "דמי מנוי",
+          "מנוי",
+          "רשיון משרד התקשורת"
         ],
         "keywords_en": [
           "telecom bill",
@@ -2432,23 +2448,29 @@
           "multiple line items"
         ],
         "vendor_examples": [
-          "Israel Electric Corporation",
-          "Mekorot",
-          "מי אביבים",
+          "Ituran",
+          "איתורן",
           "Bezeq",
-          "HOT",
+          "בזק",
           "Cellcom",
+          "סלקום",
           "Partner",
+          "פרטנר",
           "Pelephone",
-          "yes",
-          "Comcast Xfinity",
-          "Spectrum",
+          "פלאפון",
+          "HOT Mobile",
+          "HOT",
+          "012",
+          "013",
+          "019",
+          "Golan Telecom",
+          "גולן טלקום",
+          "Rami Levi",
+          "רמי לוי",
+          "Comcast",
           "AT&T",
           "Verizon",
-          "T-Mobile",
-          "Cox",
-          "PG&E",
-          "Con Edison"
+          "T-Mobile"
         ],
         "ocr_patterns": []
       },
@@ -2499,7 +2521,12 @@
       "semantic_signals": {
         "keywords_he": [
           "כבלים",
-          "טלוויזיה"
+          "טלוויזיה",
+          "חשבונית מס",
+          "לתשלום",
+          "מע\"מ",
+          "דמי מנוי",
+          "מנוי"
         ],
         "keywords_en": [
           "cable bill",
@@ -2564,7 +2591,10 @@
         "keywords_he": [
           "ארנונה",
           "נכס",
-          "עירייה"
+          "עירייה",
+          "חשבונית מס",
+          "לתשלום",
+          "מע\"מ"
         ],
         "keywords_en": [
           "property tax bill",
@@ -2628,7 +2658,10 @@
       "semantic_signals": {
         "keywords_he": [
           "ועד בית",
-          "דמי ניהול"
+          "דמי ניהול",
+          "חשבונית מס",
+          "לתשלום",
+          "מע\"מ"
         ],
         "keywords_en": [
           "hoa fee",
@@ -2690,7 +2723,10 @@
       "matching_description": "Recurring parking permit or parking subscription invoice.",
       "semantic_signals": {
         "keywords_he": [
-          "מנוי חניה"
+          "מנוי חניה",
+          "חשבונית מס",
+          "לתשלום",
+          "מע\"מ"
         ],
         "keywords_en": [
           "parking subscription",
@@ -2754,7 +2790,10 @@
         "keywords_he": [
           "שכר לימוד",
           "גן",
-          "בית ספר"
+          "בית ספר",
+          "חשבונית מס",
+          "לתשלום",
+          "מע\"מ"
         ],
         "keywords_en": [
           "tuition bill",
@@ -2817,12 +2856,10 @@
       "semantic_signals": {
         "keywords_he": [
           "קבלה",
-          "חשבונית מס",
           "אמצעי תשלום"
         ],
         "keywords_en": [
           "retail receipt",
-          "tax invoice",
           "subtotal",
           "VAT"
         ],
@@ -7779,7 +7816,14 @@
       "ui_category": "Bills & Receipts",
       "matching_description": "Recurring invoice for software or SaaS subscription.",
       "semantic_signals": {
-        "keywords_he": [],
+        "keywords_he": [
+          "חשבונית מס",
+          "לתשלום",
+          "מע\"מ",
+          "מנוי",
+          "דמי מנוי",
+          "חידוש"
+        ],
         "keywords_en": [
           "software subscription invoice"
         ],
@@ -7903,7 +7947,11 @@
       "ui_category": "Bills & Receipts",
       "matching_description": "Payment receipt for streaming media or entertainment subscription.",
       "semantic_signals": {
-        "keywords_he": [],
+        "keywords_he": [
+          "חשבונית מס",
+          "לתשלום",
+          "מע\"מ"
+        ],
         "keywords_en": [
           "streaming subscription receipt"
         ],

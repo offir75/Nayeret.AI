@@ -9,6 +9,21 @@ function toStr(v: unknown): string {
     return String((v as Record<string, unknown>).value ?? '');
   return String(v);
 }
+
+/** Truncate from the middle so both start and end remain visible. */
+function midTruncate(text: string, max = 35): string {
+  if (text.length <= max) return text;
+  const half = Math.floor((max - 1) / 2);
+  return text.slice(0, half) + '…' + text.slice(-half);
+}
+
+/** Pick the best short description for a document in the given language. */
+function getDocDescription(doc: RichDoc, lang: string): string {
+  const s = lang === 'he'
+    ? toStr(doc.summary_he) || toStr(doc.summary_en)
+    : toStr(doc.summary_en) || toStr(doc.summary_he);
+  return s || '';
+}
 import { motion, AnimatePresence, PanInfo } from 'framer-motion';
 import { Trash2, ChevronDown, ChevronUp, ArrowUpDown, FileSpreadsheet, ArrowUpCircle, ArrowDownCircle, MinusCircle, Loader2 } from 'lucide-react';
 import type { RichDoc } from '@/lib/vault/docAdapter';
@@ -304,6 +319,7 @@ export function DocumentTable({ documents, onDocClick, onDeleteDoc, onUpdateDoc 
         <table className="w-full text-sm">
           <thead>
             <tr className="border-b border-border/50">
+              <th className="p-4 text-xs font-semibold text-muted-foreground tracking-wide text-start w-40">{lang === 'he' ? 'תיאור' : 'Description'}</th>
               <SortableHeader label={t('docType')}    field="type"        currentField={sortField} currentDir={sortDir} onSort={handleSort} />
               <SortableHeader label={t('provider')}   field="provider"    currentField={sortField} currentDir={sortDir} onSort={handleSort} />
               <SortableHeader label={lang === 'en' ? 'Type' : 'סוג'} field="transaction" currentField={sortField} currentDir={sortDir} onSort={handleSort} />
@@ -327,6 +343,21 @@ export function DocumentTable({ documents, onDocClick, onDeleteDoc, onUpdateDoc 
                     className="border-b border-border/30 hover:bg-muted/30 cursor-pointer transition-colors group"
                     onClick={() => onDocClick(doc)}
                   >
+                    <td className="p-4 w-40 max-w-[10rem]">
+                      {(() => {
+                        const full = getDocDescription(doc, lang);
+                        if (!full) return <span className="text-muted-foreground/40 text-xs">—</span>;
+                        const short = midTruncate(full, 35);
+                        return (
+                          <span
+                            className="text-xs text-muted-foreground leading-tight block"
+                            title={full !== short ? full : undefined}
+                          >
+                            {short}
+                          </span>
+                        );
+                      })()}
+                    </td>
                     <td className="p-4 font-medium text-foreground">{toStr(doc.document_type)}</td>
                     <td className="p-4 text-muted-foreground">{toStr(doc.provider)}</td>
                     <td className="p-4">

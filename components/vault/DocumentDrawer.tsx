@@ -55,18 +55,25 @@ export default function DocumentDrawer({
     setPreviewLoaded(false);
   }, [doc?.id]);
 
+  // Use refs so the keyboard handler always calls the latest callbacks without
+  // re-registering the event listener every time the parent re-renders.
+  const onPrevRef = useRef(onPrev);
+  const onNextRef = useRef(onNext);
+  onPrevRef.current = onPrev;
+  onNextRef.current = onNext;
+
   // Keyboard left / right for navigation (skip when focus is in a text input)
   useEffect(() => {
     if (!open) return;
     const handler = (e: KeyboardEvent) => {
       const tag = (e.target as HTMLElement).tagName;
       if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
-      if (e.key === 'ArrowLeft')  { onPrev?.(); }
-      if (e.key === 'ArrowRight') { onNext?.(); }
+      if (e.key === 'ArrowLeft')  { onPrevRef.current?.(); }
+      if (e.key === 'ArrowRight') { onNextRef.current?.(); }
     };
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
-  }, [open, onPrev, onNext]);
+  }, [open]); // `open` is the only value that changes the listener's behaviour
 
   if (!doc) return null;
 
@@ -310,8 +317,15 @@ export default function DocumentDrawer({
                     >
                       {/* Shimmer skeleton lines — each row shimmers independently */}
                       <div className="w-2/3 space-y-2">
-                        {(['w-full', 'w-5/6', 'w-full', 'w-4/6', 'w-full', 'w-3/4'] as const).map((w, i) => (
-                          <div key={i} className={`relative h-1.5 rounded bg-border/50 overflow-hidden ${w}`}>
+                        {[
+                          { id: 'sk-1', w: 'w-full' },
+                          { id: 'sk-2', w: 'w-5/6' },
+                          { id: 'sk-3', w: 'w-full' },
+                          { id: 'sk-4', w: 'w-4/6' },
+                          { id: 'sk-5', w: 'w-full' },
+                          { id: 'sk-6', w: 'w-3/4' },
+                        ].map(({ id, w }) => (
+                          <div key={id} className={`relative h-1.5 rounded bg-border/50 overflow-hidden ${w}`}>
                             <motion.div
                               className="absolute inset-0 bg-gradient-to-r from-transparent via-white/80 to-transparent"
                               animate={{ x: ['-100%', '200%'] }}

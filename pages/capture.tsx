@@ -43,6 +43,9 @@ export default function CapturePage() {
   const submittedRef = useRef(false);
   const [isUploading, setIsUploading] = useState(false);
   const [uploadResults, setUploadResults] = useState<DocResultCard[]>([]);
+  const [pendingQueue, setPendingQueue] = useState<{ id: string; name: string }[]>([]);
+  const [activeFileName, setActiveFileName] = useState<string | null>(null);
+  const cancelledQueueIds = useRef<Set<string>>(new Set());
   const [initialFiles, setInitialFiles] = useState<string[]>([]);
   // Maps a _forceReuploadKey → async function that re-uploads with force=true
   const reuploadQueueRef = useRef<Map<string, () => Promise<void>>>(new Map());
@@ -76,12 +79,31 @@ export default function CapturePage() {
 
       setIsUploading(true);
       setUploadResults([]);
+      cancelledQueueIds.current.clear();
+
+      // Build the queue immediately so the UI shows all pending files before processing starts
+      const pendingFiles = dataUrls.map((_, i) => ({
+        id: crypto.randomUUID(),
+        name: result.bundleName
+          ? (dataUrls.length === 1 ? result.bundleName : `${result.bundleName} (${i + 1})`)
+          : (dataUrls.length === 1 ? 'Document' : `Document ${i + 1}`),
+      }));
+      setPendingQueue(pendingFiles);
 
       // Refresh token once before the loop
       const { data: { session: freshSession } } = await supabase.auth.getSession();
       const token = freshSession?.access_token ?? session.access_token;
 
       for (let i = 0; i < dataUrls.length; i++) {
+        const pending = pendingFiles[i];
+
+        // Skip files cancelled while a previous file was processing
+        if (cancelledQueueIds.current.has(pending.id)) continue;
+
+        // Move this file from "queued" to "active"
+        setActiveFileName(pending.name);
+        setPendingQueue((prev) => prev.filter((f) => f.id !== pending.id));
+
         try {
           const dataUrl = dataUrls[i];
           const mimeType = dataUrl.split(';')[0]?.split(':')[1] ?? 'image/jpeg';
@@ -213,9 +235,12 @@ export default function CapturePage() {
           }
         } catch (err) {
           console.error(`Failed to process captured page ${i + 1}:`, err);
+        } finally {
+          setActiveFileName(null);
         }
       }
 
+      setPendingQueue([]);
       setIsUploading(false);
     },
     [session],
@@ -231,6 +256,11 @@ export default function CapturePage() {
       : '/?docAdded=1';
     void router.push(url);
   }, [router]);
+
+  const handleCancelQueued = useCallback((id: string) => {
+    cancelledQueueIds.current.add(id);
+    setPendingQueue((prev) => prev.filter((f) => f.id !== id));
+  }, []);
 
   const handleForceReupload = useCallback(async (key: string) => {
     const fn = reuploadQueueRef.current.get(key);
@@ -262,9 +292,12 @@ export default function CapturePage() {
       onClose={() => void router.push('/')}
       isExiting={isUploading}
       exitResults={uploadResults}
+      pendingQueue={pendingQueue}
+      activeFileName={activeFileName}
       onComplete={handleNavigate}
       onCardClick={handleCardClick}
       onForceReupload={handleForceReupload}
+      onCancelQueued={handleCancelQueued}
       initialFiles={initialFiles.length > 0 ? initialFiles : undefined}
     />
   );

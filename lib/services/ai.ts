@@ -391,8 +391,17 @@ export async function extractStructured(
     // Flatten extracted_fields to top level; carry evidence and warnings as reserved underscore keys
     const fields: Record<string, unknown> = parsed.extracted_fields ?? (parsed as Record<string, unknown>);
     const result: Record<string, unknown> = { ...fields };
-    if (parsed.field_evidence && Object.keys(parsed.field_evidence).length > 0) {
-      result._field_evidence = parsed.field_evidence;
+    if (parsed.field_evidence) {
+      const cleanEvidence = Object.fromEntries(
+        Object.entries(parsed.field_evidence).filter(([, ev]) => {
+          if (ev == null || typeof ev !== 'object') return false;
+          const v = (ev as Record<string, unknown>).value;
+          if (v == null || v === '') return false;
+          if (Array.isArray(v) && v.length === 0) return false;
+          return true;
+        })
+      );
+      if (Object.keys(cleanEvidence).length > 0) result._field_evidence = cleanEvidence;
     }
     if (parsed.warnings?.length) result._warnings = parsed.warnings;
 

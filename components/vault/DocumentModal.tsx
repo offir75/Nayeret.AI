@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import { X, Check, AlertCircle } from 'lucide-react';
 import { useSettings } from '@/lib/context/settings';
 import type { VaultDoc } from '@/lib/types';
@@ -61,11 +61,13 @@ export default function DocumentModal({ doc, token, onClose, onUpdate }: Props) 
   }, [drafts, notesDraft, typeDraft, doc, docSource]);
 
   // ── Keyboard close ──────────────────────────────────────────────────────────
+  const onCloseRef = useRef(onClose);
+  onCloseRef.current = onClose;
   useEffect(() => {
-    const handler = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
+    const handler = (e: KeyboardEvent) => { if (e.key === 'Escape') onCloseRef.current(); };
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
-  }, [onClose]);
+  }, []); // register once; onCloseRef.current always points to the latest callback
 
   // ── Save ────────────────────────────────────────────────────────────────────
   const handleSave = async () => {
