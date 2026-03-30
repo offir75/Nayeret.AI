@@ -26,9 +26,6 @@ export default function LoginPage() {
     const { error } = await supabase.auth.signInWithOAuth({
       provider: 'google',
       options: {
-        // Supabase will redirect here after completing the Google OAuth flow.
-        // Make sure this URL is added to:
-        //   Supabase Dashboard → Authentication → URL Configuration → Redirect URLs
         redirectTo: `${window.location.origin}/auth/callback`,
       },
     });
@@ -36,35 +33,34 @@ export default function LoginPage() {
       setError(error.message);
       setLoading(false);
     }
-    // On success the browser navigates away — no need to setLoading(false)
   };
 
   return (
     <>
     <Head><title>Nayeret.AI</title></Head>
-    <div className="min-h-screen bg-gradient-to-br from-indigo-50 via-white to-gray-50 flex items-center justify-center px-4">
+    <div className="min-h-screen bg-background flex items-center justify-center px-4">
       <div className="w-full max-w-sm">
         {/* Logo / Brand */}
         <div className="text-center mb-8">
-          <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-indigo-600 text-white text-3xl mb-4 shadow-lg">
+          <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-primary text-primary-foreground text-3xl mb-4 shadow-md glow-primary">
             ✦
           </div>
           <h1 className="text-2xl font-bold tracking-tight">
-            <span className="text-gray-900">Nayeret</span><span className="text-indigo-600">.AI</span>
+            <span className="text-foreground">Nayeret</span><span className="text-primary">.AI</span>
           </h1>
-          <p className="text-sm text-gray-500 mt-1">AI-powered document manager</p>
+          <p className="text-sm text-muted-foreground mt-1">AI-powered document manager</p>
         </div>
 
         {/* Card */}
-        <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-6 space-y-5">
+        <div className="bg-card rounded-2xl shadow-sm border border-border/60 p-6 space-y-5">
           <div className="text-center">
-            <h2 className="text-base font-semibold text-gray-800">Sign in to your vault</h2>
-            <p className="text-xs text-gray-400 mt-1">Your documents are private and secure.</p>
+            <h2 className="text-base font-semibold text-foreground">Sign in to your vault</h2>
+            <p className="text-xs text-muted-foreground mt-1">Your documents are private and secure.</p>
           </div>
 
           {/* Error */}
           {error && (
-            <div className="bg-red-50 border border-red-200 text-red-700 rounded-lg px-4 py-2.5 text-sm">
+            <div className="bg-destructive/10 border border-destructive/20 text-destructive rounded-lg px-4 py-2.5 text-sm">
               {error}
             </div>
           )}
@@ -73,10 +69,10 @@ export default function LoginPage() {
           <button
             onClick={handleGoogleLogin}
             disabled={loading}
-            className="flex items-center justify-center gap-3 w-full border border-gray-300 rounded-xl px-4 py-3 text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 disabled:opacity-60 disabled:cursor-not-allowed transition-colors shadow-sm"
+            className="flex items-center justify-center gap-3 w-full border border-border rounded-xl px-4 py-3 text-sm font-medium text-foreground bg-card hover:bg-muted disabled:opacity-60 disabled:cursor-not-allowed transition-colors shadow-sm"
           >
             {loading ? (
-              <span className="inline-block w-4 h-4 border-2 border-gray-300 border-t-gray-600 rounded-full animate-spin" />
+              <span className="inline-block w-4 h-4 border-2 border-border border-t-foreground/60 rounded-full animate-spin" />
             ) : (
               <svg width="18" height="18" viewBox="0 0 18 18" xmlns="http://www.w3.org/2000/svg">
                 <path d="M17.64 9.2c0-.637-.057-1.251-.164-1.84H9v3.481h4.844a4.14 4.14 0 0 1-1.796 2.716v2.259h2.908c1.702-1.567 2.684-3.875 2.684-6.615Z" fill="#4285F4"/>
@@ -88,12 +84,12 @@ export default function LoginPage() {
             {loading ? 'Redirecting…' : 'Continue with Google'}
           </button>
 
-          <p className="text-center text-xs text-gray-400">
+          <p className="text-center text-xs text-muted-foreground">
             By signing in you agree to keep your data private and awesome.
           </p>
         </div>
 
-        <p className="text-center text-xs text-gray-300 mt-6">Nayeret.AI · Built with Next.js + Supabase</p>
+        <p className="text-center text-xs text-muted-foreground/40 mt-6">Nayeret.AI · Built with Next.js + Supabase</p>
       </div>
     </div>
     </>

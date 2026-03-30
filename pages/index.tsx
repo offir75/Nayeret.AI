@@ -195,7 +195,15 @@ export default function Dashboard() {
     if (!user || !session) return;
     setLoadingLibrary(true);
     fetchDocuments(session.access_token)
-      .then(documents => setDocs(documents))
+      .then(documents => {
+        setDocs(documents);
+        // Returning users with existing documents skip onboarding (handles new-device logins
+        // where localStorage is clear but the user already has a populated vault).
+        if (documents.length > 0) {
+          try { localStorage.setItem('nayeret_onboarded', 'true'); } catch {}
+          setOnboarded(true);
+        }
+      })
       .catch(() => setDocs([]))
       .finally(() => setLoadingLibrary(false));
   // eslint-disable-next-line react-hooks/exhaustive-deps
